@@ -47,7 +47,6 @@ export const login = async (req, res) => {
   const { emailOrPhone, password } = req.body;
   try {
     const pool = getPool();
-    // Search by email OR phone
     const [users] = await pool.query(
       'SELECT * FROM users WHERE email = ? OR phone = ?', 
       [emailOrPhone, emailOrPhone]
@@ -68,7 +67,7 @@ export const login = async (req, res) => {
     const balance = wallets.length > 0 ? wallets[0].balance : 0;
 
     const token = jwt.sign({ id: user.id, username: user.username || user.email }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ token, user: { id: user.id, username: user.username || user.name || user.email, balance } });
+    res.json({ token, user: { id: user.id, username: user.username || user.name || user.email, balance, walletAddress: user.wallet_address } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -81,10 +80,38 @@ export const getUser = async (req, res) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     const pool = getPool();
+    
+    const [users] = await pool.query('SELECT name, username, wallet_address FROM users WHERE id = ?', [decoded.id]);
+    const user = users[0];
+
     const [wallets] = await pool.query('SELECT balance FROM wallets WHERE user_id = ?', [decoded.id]);
     
-    res.json({ user: { id: decoded.id, username: decoded.username, balance: wallets[0].balance } });
+    res.json({ 
+      user: { 
+        id: decoded.id, 
+        username: user.username || user.name, 
+        balance: wallets[0].balance,
+        walletAddress: user.wallet_address
+      } 
+    });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+export const linkWallet = async (req, res) => {
+  const { walletAddress } = req.body;
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token provided' });
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const pool = getPool();
+
+    await pool.query('UPDATE users SET wallet_address = ? WHERE id = ?', [walletAddress, decoded.id]);
+    
+    res.json({ message: 'Wallet linked successfully', walletAddress });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };

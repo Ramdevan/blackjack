@@ -64,8 +64,31 @@ export const BlackjackGame = ({ account, provider }) => {
         // Initialize mock cards for visual (in real DApp, we fetch from contract state)
         setPlayerCards([Math.floor(Math.random() * 13) + 1, Math.floor(Math.random() * 13) + 1]);
         setDealerCards([Math.floor(Math.random() * 13) + 1]);
-        setGameActive(true);
-        setMessage('Game started! Your turn.');
+
+        // Check if game was auto-settled on the initial deal
+        const settledEvent = receipt.logs.find(log => {
+          try {
+            const parsed = blackjack.interface.parseLog(log);
+            return parsed.name === 'GameSettled';
+          } catch (e) { return false; }
+        });
+
+        if (settledEvent) {
+          const parsed = blackjack.interface.parseLog(settledEvent);
+          const payout = ethers.formatEther(parsed.args.payout);
+          
+          setDealerCards([...dealerCards, Math.floor(Math.random() * 13) + 1]);
+          setMessage(Number(payout) > 0 ? `Blackjack! You won ${payout} tokens!` : 'Dealer Blackjack! House wins!');
+          setGameActive(false);
+
+          await axios.post(`${BACKEND_URL}/games/settle`, {
+            gameId: newGameId,
+            payout: payout
+          });
+        } else {
+          setGameActive(true);
+          setMessage('Game started! Your turn.');
+        }
       }
     } catch (err) {
       console.error(err);
@@ -84,13 +107,33 @@ export const BlackjackGame = ({ account, provider }) => {
       
       setMessage('Hitting...');
       const tx = await blackjack.hit(gameId);
-      await tx.wait();
+      const receipt = await tx.wait();
       
       // Mock update
       setPlayerCards([...playerCards, Math.floor(Math.random() * 13) + 1]);
       setMessage('Hit successful.');
       
-      // In real app, we check if player busted by reading contract state
+      // Check GameSettled event
+      const event = receipt.logs.find(log => {
+        try {
+          const parsed = blackjack.interface.parseLog(log);
+          return parsed.name === 'GameSettled';
+        } catch (e) { return false; }
+      });
+
+      if (event) {
+        const parsed = blackjack.interface.parseLog(event);
+        const payout = ethers.formatEther(parsed.args.payout);
+        
+        setDealerCards([...dealerCards, Math.floor(Math.random() * 13) + 1]);
+        setMessage(Number(payout) > 0 ? `You won ${payout} tokens!` : 'Dealer wins!');
+        setGameActive(false);
+
+        await axios.post(`${BACKEND_URL}/games/settle`, {
+          gameId: gameId,
+          payout: payout
+        });
+      }
     } catch (err) {
       console.error(err);
       setMessage('Error: ' + (err.reason || err.message));

@@ -23,39 +23,69 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
   const [allowance, setAllowance] = useState(0n);
   const [tokenDecimals, setTokenDecimals] = useState(18);
 
+  // Split-hand state additions
+  const [isSplit, setIsSplit] = useState(false);
+  const [activeHandIndex, setActiveHandIndex] = useState(0); // 0 = Left Hand, 1 = Right Hand
+  const [playerHandLeft, setPlayerHandLeft] = useState([]);
+  const [playerHandRight, setPlayerHandRight] = useState([]);
+
   // Persistence: Restore game on load
   useEffect(() => {
     const savedGameId = localStorage.getItem('bj_active_game_id');
     const savedStatus = localStorage.getItem('bj_status');
 
-    if (savedGameId && savedStatus === 'playing') {
+    if (savedGameId && (savedStatus === 'playing' || savedStatus === 'settled')) {
       setGameId(savedGameId);
-      setStatus('playing');
+      setStatus(savedStatus);
 
       const savedPlayerHand = localStorage.getItem('bj_player_hand');
       const savedDealerHand = localStorage.getItem('bj_dealer_hand');
+      const savedIsSplit = localStorage.getItem('bj_is_split') === 'true';
+      const savedActiveHandIndex = parseInt(localStorage.getItem('bj_active_hand_index') || '0');
+      const savedPlayerHandLeft = localStorage.getItem('bj_player_hand_left');
+      const savedPlayerHandRight = localStorage.getItem('bj_player_hand_right');
+      const savedOutcome = localStorage.getItem('bj_outcome');
 
       if (savedPlayerHand && savedDealerHand) {
         setPlayerHand(JSON.parse(savedPlayerHand));
         setDealerHand(JSON.parse(savedDealerHand));
       }
+      setIsSplit(savedIsSplit);
+      setActiveHandIndex(savedActiveHandIndex);
+      if (savedPlayerHandLeft) setPlayerHandLeft(JSON.parse(savedPlayerHandLeft));
+      if (savedPlayerHandRight) setPlayerHandRight(JSON.parse(savedPlayerHandRight));
+      if (savedOutcome) setOutcome(savedOutcome);
     }
   }, []);
 
   // Persistence: Save state changes
   useEffect(() => {
-    if (status === 'playing' && gameId) {
+    if ((status === 'playing' || status === 'settled') && gameId) {
       localStorage.setItem('bj_active_game_id', gameId);
-      localStorage.setItem('bj_status', 'playing');
+      localStorage.setItem('bj_status', status);
       localStorage.setItem('bj_player_hand', JSON.stringify(playerHand));
       localStorage.setItem('bj_dealer_hand', JSON.stringify(dealerHand));
+      localStorage.setItem('bj_is_split', isSplit.toString());
+      localStorage.setItem('bj_active_hand_index', activeHandIndex.toString());
+      localStorage.setItem('bj_player_hand_left', JSON.stringify(playerHandLeft));
+      localStorage.setItem('bj_player_hand_right', JSON.stringify(playerHandRight));
+      if (outcome) {
+        localStorage.setItem('bj_outcome', outcome);
+      } else {
+        localStorage.removeItem('bj_outcome');
+      }
     } else if (status === 'betting') {
       localStorage.removeItem('bj_active_game_id');
       localStorage.removeItem('bj_status');
       localStorage.removeItem('bj_player_hand');
       localStorage.removeItem('bj_dealer_hand');
+      localStorage.removeItem('bj_is_split');
+      localStorage.removeItem('bj_active_hand_index');
+      localStorage.removeItem('bj_player_hand_left');
+      localStorage.removeItem('bj_player_hand_right');
+      localStorage.removeItem('bj_outcome');
     }
-  }, [status, gameId, playerHand, dealerHand]);
+  }, [status, gameId, playerHand, dealerHand, isSplit, activeHandIndex, playerHandLeft, playerHandRight, outcome]);
 
   // Provider & Signer
   const [contract, setContract] = useState(null);
@@ -74,19 +104,105 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
         checkAllowance(tk, authData.address);
 
         const savedGameId = localStorage.getItem('bj_active_game_id');
+        const savedStatus = localStorage.getItem('bj_status');
         if (savedGameId) {
           bj.games(savedGameId).then(game => {
-            if (game.settled) {
-              console.log("Game was already settled on-chain. Clearing local state.");
+            // Safety validation: Reset local state if game session is legacy, invalid, or belongs to a different account
+            if (!game.player || game.player === "0x0000000000000000000000000000000000000000" || game.player.toLowerCase() !== authData.address.toLowerCase()) {
+              console.log("Legacy, invalid, or different account game session detected. Resetting local table state.");
+              localStorage.removeItem('bj_active_game_id');
+              localStorage.removeItem('bj_status');
+              localStorage.removeItem('bj_player_hand');
+              localStorage.removeItem('bj_dealer_hand');
+              localStorage.removeItem('bj_is_split');
+              localStorage.removeItem('bj_active_hand_index');
+              localStorage.removeItem('bj_player_hand_left');
+              localStorage.removeItem('bj_player_hand_right');
+              localStorage.removeItem('bj_outcome');
+              setGameId(null);
               setStatus('betting');
-              setPlayerHand([]);
-              setDealerHand([]);
+              return;
             }
-          }).catch(console.error);
+
+            if (game.settled) {
+              if (savedStatus === 'settled') {
+                console.log("Game is settled on-chain and locally marked as settled. Keeping visual state.");
+              } else {
+                console.log("Game is settled on-chain but was active locally. Syncing to show final result.");
+                handleGameRevertSync("Game was completed on-chain.", savedGameId);
+              }
+            } else {
+              // Retrieve active hands and cards from the upgraded contract directly!
+              setTimeout(() => {
+                syncCardsFromChain(savedGameId);
+              }, 500);
+            }
+          }).catch(err => {
+            console.error("Error querying active game:", err);
+            // Self-heal on error (e.g. invalid query parameter/ID on the new contract)
+            localStorage.removeItem('bj_active_game_id');
+            localStorage.removeItem('bj_status');
+            setGameId(null);
+            setStatus('betting');
+          });
         }
       });
     }
   }, [authData.address]);
+
+  const syncCardsFromChain = async (activeId, forceRevealDealer = false) => {
+    if (!contract || !activeId) return null;
+    try {
+      const gameInfo = await contract.games(activeId);
+      const isSplitGame = gameInfo.isSplit;
+      const isSettled = gameInfo.settled;
+
+      // 1. Fetch dealer's cards from the upgraded smart contract
+      const onChainDealerCards = await contract.getDealerCards(activeId);
+      const formattedDealerCards = onChainDealerCards.map((c, idx) => {
+        if (idx === 1 && !isSettled && !forceRevealDealer) {
+          return { hidden: true };
+        }
+        return formatCard(Number(c));
+      });
+      setDealerHand(formattedDealerCards);
+
+      let formattedPlayerCards = [];
+      let formattedLeftCards = [];
+      let formattedRightCards = [];
+
+      // 2. Fetch player's cards
+      if (isSplitGame) {
+        const leftCards = await contract.getPlayerCards(activeId, 0);
+        formattedLeftCards = leftCards.map(c => formatCard(Number(c)));
+        setPlayerHandLeft(formattedLeftCards);
+
+        const rightCards = await contract.getPlayerCards(activeId, 1);
+        formattedRightCards = rightCards.map(c => formatCard(Number(c)));
+        setPlayerHandRight(formattedRightCards);
+
+        setIsSplit(true);
+        setActiveHandIndex(Number(gameInfo.currentHand));
+      } else {
+        const playerCards = await contract.getPlayerCards(activeId, 0);
+        formattedPlayerCards = playerCards.map(c => formatCard(Number(c)));
+        setPlayerHand(formattedPlayerCards);
+        setIsSplit(false);
+      }
+
+      return {
+        isSplit: isSplitGame,
+        currentHand: Number(gameInfo.currentHand),
+        playerHand: formattedPlayerCards,
+        playerHandLeft: formattedLeftCards,
+        playerHandRight: formattedRightCards,
+        dealerHand: formattedDealerCards
+      };
+    } catch (err) {
+      console.error("Failed to sync on-chain cards:", err);
+      return null;
+    }
+  };
 
   const checkAllowance = async (tk, owner) => {
     const allow = await tk.allowance(owner, CONTRACT_ADDRESS);
@@ -113,6 +229,12 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
     if (!contract || betAmount <= 0) return;
     setLoading(true);
     try {
+      // Clear split-hand states
+      setIsSplit(false);
+      setActiveHandIndex(0);
+      setPlayerHandLeft([]);
+      setPlayerHandRight([]);
+
       const amount = ethers.parseUnits(betAmount.toString(), tokenDecimals);
       if (allowance < amount) {
         return alert('Insufficient allowance. Please approve tokens.');
@@ -139,14 +261,10 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       if (gameStartedEvent) {
         const newId = gameStartedEvent.args.gameId.toString();
         setGameId(newId);
-
-        const card1 = Math.floor(Math.random() * 52) + 1;
-        const card2 = Math.floor(Math.random() * 52) + 1;
-        const dCard = Math.floor(Math.random() * 52) + 1;
-
-        setPlayerHand([formatCard(card1), formatCard(card2)]);
-        setDealerHand([formatCard(dCard), { hidden: true }]);
         setCurrentBet(betAmount);
+
+        // Retrieve authentic cards from contract
+        const synced = await syncCardsFromChain(newId);
 
         // Check if game was auto-settled on the initial deal (Natural Blackjack)
         const settledEvent = receipt.logs.find(log => {
@@ -160,19 +278,8 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
           const parsed = contract.interface.parseLog(settledEvent);
           const payout = Number(ethers.formatUnits(parsed.args.payout, tokenDecimals));
 
-          // Get final game state from contract
-          const gameInfo = await contract.games(newId);
-          const finalDealerScore = Number(gameInfo.dealerScore);
-
-          const initialPlayerHand = [formatCard(card1), formatCard(card2)];
-          const { adjustedPlayerHand, adjustedDealerHand } = adjustHandsForSettlement(
-            initialPlayerHand,
-            finalDealerScore,
-            payout,
-            betAmount
-          );
-          setPlayerHand(adjustedPlayerHand);
-          setDealerHand(adjustedDealerHand);
+          // Retrieve final authentic cards and reveal dealer second card
+          await syncCardsFromChain(newId, true);
 
           setLastWin(payout);
           setStatus('settled');
@@ -186,29 +293,20 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
             toast.success("Push! Bet returned.", { duration: 5000 });
           } else {
             setOutcome('loss');
-            toast.error("Dealer Blackjack! House wins!", { duration: 3000 });
+            toast.error("Dealer Blackjack! Dealer wins!", { duration: 3000 });
           }
-
-          setTimeout(() => {
-            setStatus(currentStatus => {
-              if (currentStatus === 'settled') {
-                setPlayerHand([]);
-                setDealerHand([]);
-                setOutcome(null);
-                return 'betting';
-              }
-              return currentStatus;
-            });
-          }, 5000);
         } else {
           setStatus('playing'); // Update status LAST to ensure other states are set
-          const initialPlayerHand = [formatCard(card1), formatCard(card2)];
-          const initialScore = calculateScore(initialPlayerHand);
-          if (initialScore === 21) {
-            toast.success("Blackjack! Auto-standing...", { duration: 2500 });
-            setTimeout(() => {
-              stand();
-            }, 1000);
+          if (synced && synced.playerHand) {
+            const initialScore = calculateScore(synced.playerHand);
+            if (initialScore === 21) {
+              toast.success("Blackjack! Auto-standing...", { duration: 2500 });
+              setTimeout(() => {
+                stand();
+              }, 1000);
+            } else {
+              toast.success("Game Started!");
+            }
           } else {
             toast.success("Game Started!");
           }
@@ -233,19 +331,34 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       const tx = await contract.hit(gameId, { gasLimit: (gasEstimate * 130n) / 100n });
       const receipt = await tx.wait();
 
-      const newCardVal = Math.floor(Math.random() * 52) + 1;
-      const updatedHand = [...playerHand, formatCard(newCardVal)];
-      setPlayerHand(updatedHand);
+      // Retrieve authentic card state from contract
+      const synced = await syncCardsFromChain(gameId);
+      if (!synced) throw new Error("On-chain card sync failed.");
+
+      const activeHand = synced.isSplit
+        ? (synced.currentHand === 0 ? synced.playerHandLeft : synced.playerHandRight)
+        : synced.playerHand;
+
       toast.success("Hit successful!");
 
-      const score = calculateScore(updatedHand);
+      const score = calculateScore(activeHand);
       if (score > 21) {
         toast.error("Bust!");
+        if (synced.isSplit && synced.currentHand === 0) {
+          setActiveHandIndex(1);
+          toast.success("Left hand busted! Playing right hand.", { duration: 3000 });
+        }
       } else if (score === 21) {
-        toast.success("Exactly 21! Auto-standing...", { duration: 2500 });
-        setTimeout(() => {
-          stand();
-        }, 1000);
+        toast.success("Exactly 21!", { duration: 2000 });
+        if (synced.isSplit && synced.currentHand === 0) {
+          setActiveHandIndex(1);
+          toast.success("Left hand got 21! Playing right hand.", { duration: 3000 });
+        } else {
+          toast.success("Auto-standing...", { duration: 2000 });
+          setTimeout(() => {
+            stand();
+          }, 1000);
+        }
       }
 
       // Check if game was auto-settled (e.g. bust or hit exactly 21)
@@ -260,23 +373,13 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
         const parsed = contract.interface.parseLog(event);
         const payout = Number(ethers.formatUnits(parsed.args.payout, tokenDecimals));
 
-        // Get final game state from contract
-        const gameInfo = await contract.games(gameId);
-        const finalDealerScore = Number(gameInfo.dealerScore);
-
-        const { adjustedPlayerHand, adjustedDealerHand } = adjustHandsForSettlement(
-          updatedHand,
-          finalDealerScore,
-          payout,
-          betAmount
-        );
-        setPlayerHand(adjustedPlayerHand);
-        setDealerHand(adjustedDealerHand);
+        // Sync final authentic state and reveal dealer's second card
+        await syncCardsFromChain(gameId, true);
 
         setLastWin(payout);
         setStatus('settled');
 
-        const betVal = Number(betAmount);
+        const betVal = isSplit ? Number(betAmount) * 2 : Number(betAmount);
         if (payout > betVal) {
           setOutcome('win');
           toast.success(`You won ${payout} chips!`, { duration: 5000 });
@@ -285,32 +388,12 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
           toast.success("Push! Bet returned.", { duration: 5000 });
         } else {
           setOutcome('loss');
-          toast.error("House wins!", { duration: 3000 });
+          toast.error("Dealer wins!", { duration: 3000 });
         }
-
-        setTimeout(() => {
-          setStatus(currentStatus => {
-            if (currentStatus === 'settled') {
-              setPlayerHand([]);
-              setDealerHand([]);
-              setOutcome(null);
-              return 'betting';
-            }
-            return currentStatus;
-          });
-        }, 5000);
       }
     } catch (err) {
       console.error(err);
-      if (err.reason === "Settled" || (err.message && err.message.includes("Settled"))) {
-        toast.error("Game already settled! Refreshing table...");
-        setStatus('betting');
-        setPlayerHand([]);
-        setDealerHand([]);
-        setOutcome(null);
-      } else {
-        toast.error("Hit failed");
-      }
+      await handleGameRevertSync("Hit failed");
     } finally {
       setLoading(false);
     }
@@ -321,8 +404,8 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
     setLoading(true);
     try {
       const gasEstimate = await contract.stand.estimateGas(gameId).catch(() => 250000n);
-      const tx = await contract.stand(gameId, { 
-        gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n 
+      const tx = await contract.stand(gameId, {
+        gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n
       });
       const receipt = await tx.wait();
 
@@ -338,23 +421,13 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
         const parsed = contract.interface.parseLog(event);
         const payout = Number(ethers.formatUnits(parsed.args.payout, tokenDecimals));
 
-        // Get final game state from contract
-        const gameInfo = await contract.games(gameId);
-        const finalDealerScore = Number(gameInfo.dealerScore);
-
-        const { adjustedPlayerHand, adjustedDealerHand } = adjustHandsForSettlement(
-          playerHand,
-          finalDealerScore,
-          payout,
-          betAmount
-        );
-        setPlayerHand(adjustedPlayerHand);
-        setDealerHand(adjustedDealerHand);
+        // Sync final authentic state and reveal dealer's second card
+        await syncCardsFromChain(gameId, true);
 
         setLastWin(payout);
         setStatus('settled');
 
-        const betVal = Number(betAmount);
+        const betVal = isSplit ? Number(betAmount) * 2 : Number(betAmount);
         if (payout > betVal) {
           setOutcome('win');
           toast.success(`You won ${payout} chips!`, { duration: 5000 });
@@ -363,56 +436,26 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
           toast.success("Push! Bet returned.", { duration: 5000 });
         } else {
           setOutcome('loss');
-          toast.error("House wins!", { duration: 3000 });
+          toast.error("Dealer wins!", { duration: 3000 });
         }
-
-        // Keep cards visible for 5 seconds so user can see the result
-        setTimeout(() => {
-          setStatus(currentStatus => {
-            if (currentStatus === 'settled') {
-              setPlayerHand([]);
-              setDealerHand([]);
-              setOutcome(null);
-              return 'betting';
-            }
-            return currentStatus;
-          });
-        }, 5000);
       } else {
-        // Fallback: Query the game state directly from contract
+        // Fallback or intermediate transition: Query the game state directly from contract
         const gameInfo = await contract.games(gameId);
         if (gameInfo.settled) {
-          const finalDealerScore = Number(gameInfo.dealerScore);
-          const initialDealerCard = dealerHand[0];
-          const updatedDealerHand = generateDealerHandForScore(initialDealerCard, finalDealerScore);
-          setDealerHand(updatedDealerHand);
-
+          await syncCardsFromChain(gameId, true);
           setStatus('settled');
-          const playerVal = calculateScore(playerHand);
-          if (playerVal > 21) {
-            setOutcome('loss');
-          } else if (finalDealerScore > 21 || playerVal > finalDealerScore) {
-            setOutcome('win');
-          } else if (playerVal === finalDealerScore) {
-            setOutcome('push');
-          } else {
-            setOutcome('loss');
-          }
+          setOutcome('loss');
         } else {
+          if (isSplit) {
+            await syncCardsFromChain(gameId);
+            toast.success("Stood on Left Hand. Playing Right Hand!", { duration: 3000 });
+          }
           setStatus('playing');
         }
       }
     } catch (err) {
       console.error(err);
-      if (err.reason === "Settled" || (err.message && err.message.includes("Settled"))) {
-        toast.error("Game already settled! Refreshing table...");
-        setStatus('betting');
-        setPlayerHand([]);
-        setDealerHand([]);
-        setOutcome(null);
-      } else {
-        toast.error("Stand transaction failed");
-      }
+      await handleGameRevertSync("Stand transaction failed");
     } finally {
       setLoading(false);
     }
@@ -423,17 +466,18 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
     setLoading(true);
     try {
       const gasEstimate = await contract.doubleDown.estimateGas(gameId).catch(() => 250000n);
-      const tx = await contract.doubleDown(gameId, { 
-        gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n 
+      const tx = await contract.doubleDown(gameId, {
+        gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n
       });
       const receipt = await tx.wait();
 
-      const newCardVal = Math.floor(Math.random() * 52) + 1;
-      const updatedHand = [...playerHand, formatCard(newCardVal)];
-      setPlayerHand(updatedHand);
+      // Retrieve real cards from contract after double down transaction completes
+      await syncCardsFromChain(gameId);
+
       toast.success("Double Down successful!");
 
-      setCurrentBet(prev => prev * 2);
+      // Visually double active bet (if split, adding another bet, so bet is increased by original bet)
+      setCurrentBet(prev => Number(prev) + Number(betAmount));
 
       const event = receipt.logs.find(log => {
         try {
@@ -446,23 +490,13 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
         const parsed = contract.interface.parseLog(event);
         const payout = Number(ethers.formatUnits(parsed.args.payout, tokenDecimals));
 
-        // Get final game state from contract
-        const gameInfo = await contract.games(gameId);
-        const finalDealerScore = Number(gameInfo.dealerScore);
-
-        const { adjustedPlayerHand, adjustedDealerHand } = adjustHandsForSettlement(
-          updatedHand,
-          finalDealerScore,
-          payout,
-          betAmount * 2
-        );
-        setPlayerHand(adjustedPlayerHand);
-        setDealerHand(adjustedDealerHand);
+        // Sync final authentic state and reveal dealer's second card
+        await syncCardsFromChain(gameId, true);
 
         setLastWin(payout);
         setStatus('settled');
 
-        const betVal = Number(betAmount) * 2;
+        const betVal = isSplit ? Number(betAmount) * 3 : Number(betAmount) * 2;
         if (payout > betVal) {
           setOutcome('win');
           toast.success(`You won ${payout} chips!`, { duration: 5000 });
@@ -471,55 +505,26 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
           toast.success("Push! Bet returned.", { duration: 5000 });
         } else {
           setOutcome('loss');
-          toast.error("House wins!", { duration: 3000 });
+          toast.error("Dealer wins!", { duration: 3000 });
         }
-
-        setTimeout(() => {
-          setStatus(currentStatus => {
-            if (currentStatus === 'settled') {
-              setPlayerHand([]);
-              setDealerHand([]);
-              setOutcome(null);
-              return 'betting';
-            }
-            return currentStatus;
-          });
-        }, 5000);
       } else {
         // Fallback: Query the game state directly from contract
         const gameInfo = await contract.games(gameId);
         if (gameInfo.settled) {
-          const finalDealerScore = Number(gameInfo.dealerScore);
-          const initialDealerCard = dealerHand[0];
-          const updatedDealerHand = generateDealerHandForScore(initialDealerCard, finalDealerScore);
-          setDealerHand(updatedDealerHand);
-
+          await syncCardsFromChain(gameId, true);
           setStatus('settled');
-          const playerVal = calculateScore(updatedHand);
-          if (playerVal > 21) {
-            setOutcome('loss');
-          } else if (finalDealerScore > 21 || playerVal > finalDealerScore) {
-            setOutcome('win');
-          } else if (playerVal === finalDealerScore) {
-            setOutcome('push');
-          } else {
-            setOutcome('loss');
-          }
+          setOutcome('loss');
         } else {
+          if (isSplit) {
+            await syncCardsFromChain(gameId);
+            toast.success("Double Down successful! Playing Right Hand.", { duration: 3000 });
+          }
           setStatus('playing');
         }
       }
     } catch (err) {
       console.error(err);
-      if (err.reason === "Settled" || (err.message && err.message.includes("Settled"))) {
-        toast.error("Game already settled! Refreshing table...");
-        setStatus('betting');
-        setPlayerHand([]);
-        setDealerHand([]);
-        setOutcome(null);
-      } else {
-        toast.error("Double Down failed");
-      }
+      await handleGameRevertSync("Double Down failed");
     } finally {
       setLoading(false);
     }
@@ -533,8 +538,13 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       const tx = await contract.split(gameId, { gasLimit: (gasEstimate * 130n) / 100n });
       await tx.wait();
 
-      toast.success("Split successful!");
-      // Splitting logic requires handling two hands in UI. We will add visual indication for now.
+      // Retrieve the real split hand cards from the contract!
+      await syncCardsFromChain(gameId);
+
+      toast.success("Split successful! Playing Left Hand.");
+
+      // Update bet visually to double the active bet
+      setCurrentBet(prev => Number(prev) * 2);
     } catch (err) {
       console.error(err);
       toast.error("Split failed");
@@ -601,6 +611,78 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
     }
 
     return hand;
+  };
+
+  const getRandomCardForScore = (targetScore) => {
+    let possibleRanks = [];
+    for (let r = 1; r <= 52; r++) {
+      const valIdx = r % 13;
+      let cardScore = 0;
+      if (valIdx === 0) cardScore = 11;
+      else if (valIdx >= 10) cardScore = 10;
+      else cardScore = valIdx + 1;
+
+      if (cardScore === targetScore) possibleRanks.push(r);
+    }
+    const chosenRank = possibleRanks[Math.floor(Math.random() * possibleRanks.length)] || 10;
+    return formatCard(chosenRank);
+  };
+
+  const adjustSplitHandsForSettlement = (leftH, rightH, dealerScoreOnChain, payoutAmount, totalBetVal) => {
+    let newLeftHand = [...leftH];
+    let newRightHand = [...rightH];
+    let newDealerHand = [];
+
+    let trueOutcome = 'loss';
+    if (payoutAmount > totalBetVal) {
+      trueOutcome = 'win';
+    } else if (payoutAmount === totalBetVal && payoutAmount > 0) {
+      trueOutcome = 'push';
+    }
+
+    let leftScore = calculateScore(newLeftHand);
+    let rightScore = calculateScore(newRightHand);
+    let dScore = dealerScoreOnChain;
+
+    if (trueOutcome === 'loss') {
+      if (leftScore <= 21 && dScore <= 21 && dScore > leftScore) {
+        // Keep left hand
+      } else if (leftScore <= 21) {
+        const needed = 22 - leftScore;
+        newLeftHand.push(getRandomCardForScore(Math.max(needed, 10)));
+      }
+
+      if (rightScore <= 21 && dScore <= 21 && dScore > rightScore) {
+        // Keep right hand
+      } else if (rightScore <= 21) {
+        const needed = 22 - rightScore;
+        newRightHand.push(getRandomCardForScore(Math.max(needed, 10)));
+      }
+
+      newDealerHand = generateDealerHandForScore(dealerHand[0] || formatCard(Math.floor(Math.random() * 52) + 1), dScore);
+    } else if (trueOutcome === 'win') {
+      if (dScore > 21) {
+        if (leftScore > 21) { newLeftHand = generateHandForScore(20); }
+        if (rightScore > 21) { newRightHand = generateHandForScore(20); }
+      } else {
+        newLeftHand = generateHandForScore(Math.max(dScore + 1, 20));
+        if (rightScore <= 21) {
+          newRightHand = generateHandForScore(Math.max(17, dScore - 1));
+        }
+      }
+      newDealerHand = generateDealerHandForScore(dealerHand[0] || formatCard(Math.floor(Math.random() * 52) + 1), dScore);
+    } else {
+      if (dScore > 21) {
+        newLeftHand = generateHandForScore(20);
+        newRightHand = generateHandForScore(20);
+      } else {
+        newLeftHand = generateHandForScore(dScore);
+        newRightHand = generateHandForScore(dScore);
+      }
+      newDealerHand = generateDealerHandForScore(dealerHand[0] || formatCard(Math.floor(Math.random() * 52) + 1), dScore);
+    }
+
+    return { adjustedLeftHand: newLeftHand, adjustedRightHand: newRightHand, adjustedDealerHand: newDealerHand };
   };
 
   const adjustHandsForSettlement = (playerH, dealerScoreOnChain, payoutAmount, currentBetVal) => {
@@ -703,6 +785,32 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
     return { adjustedPlayerHand: newPlayerHand, adjustedDealerHand: newDealerHand };
   };
 
+  const handleGameRevertSync = async (fallbackErrorMessage, forcedGameId = null) => {
+    const activeId = forcedGameId || gameId;
+    if (!contract || !activeId) {
+      toast.error(fallbackErrorMessage);
+      return;
+    }
+
+    try {
+      const gameInfo = await contract.games(activeId);
+      if (gameInfo && gameInfo.settled) {
+        toast.error("Synchronizing table visual state from blockchain...");
+
+        // Sync final authentic cards directly from smart contract and reveal dealer cards
+        await syncCardsFromChain(activeId, true);
+
+        setStatus('settled');
+        setOutcome('loss');
+        return;
+      }
+    } catch (syncErr) {
+      console.error("Self-healing table sync failed:", syncErr);
+    }
+
+    toast.error(fallbackErrorMessage);
+  };
+
   const formatCard = (val) => {
     const suits = ['♠', '♥', '♣', '♦'];
     const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -757,34 +865,77 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       {status === 'settled' && outcome && (
         <div className="my-4 animate-in zoom-in-50 duration-500 flex flex-col items-center">
           <div className={`px-8 py-3 rounded-2xl border text-2xl font-black tracking-widest uppercase shadow-[0_0_35px_rgba(0,0,0,0.8)] ${outcome === 'win'
-              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-emerald-500/20'
-              : outcome === 'push'
-                ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-500/20'
-                : 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20'
+            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-emerald-500/20'
+            : outcome === 'push'
+              ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-500/20'
+              : 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20'
             }`}>
             {outcome === 'win' && "🏆 You Win!"}
             {outcome === 'push' && "🤝 Push / Tie"}
-            {outcome === 'loss' && "❌ House Wins"}
+            {outcome === 'loss' && "❌ Dealer Wins"}
           </div>
         </div>
       )}
 
       {/* Player Area */}
-      <div className="flex flex-col items-center mb-12">
-        <div className="flex min-h-[120px] mb-4">
-          {playerHand.map((c, i) => (
-            <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-50px' : '0', zIndex: i }}>
-              <Web2Card suit={c.suit} value={c.value} />
+      <div className="flex flex-col items-center mb-12 w-full max-w-4xl px-4">
+        {isSplit ? (
+          <div className="flex flex-row justify-around w-full gap-8">
+            {/* Left Hand */}
+            <div className={`flex flex-col items-center p-6 rounded-2xl border transition-all duration-300 w-[240px] bg-slate-900/60 ${activeHandIndex === 0 && status === 'playing' ? 'border-amber-500 shadow-[0_0_25px_rgba(245,158,11,0.2)] bg-slate-900/90 scale-105' : 'border-slate-800 opacity-60'}`}>
+              <div className="bg-black/40 px-3 py-0.5 text-white text-[10px] uppercase font-bold rounded tracking-wider mb-4 border border-slate-700">
+                Left Hand {activeHandIndex === 0 && status === 'playing' && "✏️ Active"}
+              </div>
+              <div className="flex min-h-[120px] mb-4 relative justify-center">
+                <div className="flex">
+                  {playerHandLeft.map((c, i) => (
+                    <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-50px' : '0', zIndex: i }}>
+                      <Web2Card suit={c.suit} value={c.value} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="px-4 py-1 bg-amber-500/20 border border-amber-500 rounded-full text-white text-xs font-bold">
+                Score: {calculateScore(playerHandLeft)}
+              </div>
             </div>
-          ))}
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          <div className="px-4 py-1 bg-blue-600/20 border border-blue-500 rounded-full text-white text-xs font-bold">
-            Score: {calculateScore(playerHand)}
+
+            {/* Right Hand */}
+            <div className={`flex flex-col items-center p-6 rounded-2xl border transition-all duration-300 w-[240px] bg-slate-900/60 ${activeHandIndex === 1 && status === 'playing' ? 'border-amber-500 shadow-[0_0_25px_rgba(245,158,11,0.2)] bg-slate-900/90 scale-105' : 'border-slate-800 opacity-60'}`}>
+              <div className="bg-black/40 px-3 py-0.5 text-white text-[10px] uppercase font-bold rounded tracking-wider mb-4 border border-slate-700">
+                Right Hand {activeHandIndex === 1 && status === 'playing' && "✏️ Active"}
+              </div>
+              <div className="flex min-h-[120px] mb-4 relative justify-center">
+                <div className="flex">
+                  {playerHandRight.map((c, i) => (
+                    <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-50px' : '0', zIndex: i }}>
+                      <Web2Card suit={c.suit} value={c.value} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="px-4 py-1 bg-amber-500/20 border border-amber-500 rounded-full text-white text-xs font-bold">
+                Score: {calculateScore(playerHandRight)}
+              </div>
+            </div>
           </div>
-          <div className="px-4 py-2 bg-black/40 border border-slate-700 rounded-xl text-white font-bold text-xs">
-            {authData.address.slice(0, 6)}...{authData.address.slice(-4)}
+        ) : (
+          <div className="flex flex-col items-center">
+            <div className="flex min-h-[120px] mb-4">
+              {playerHand.map((c, i) => (
+                <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-50px' : '0', zIndex: i }}>
+                  <Web2Card suit={c.suit} value={c.value} />
+                </div>
+              ))}
+            </div>
+            <div className="px-4 py-1 bg-blue-600/20 border border-blue-500 rounded-full text-white text-xs font-bold mb-2">
+              Score: {calculateScore(playerHand)}
+            </div>
           </div>
+        )}
+
+        <div className="px-4 py-1.5 mt-4 bg-black/40 border border-slate-700 rounded-xl text-white font-bold text-xs">
+          {authData.address.slice(0, 6)}...{authData.address.slice(-4)}
         </div>
       </div>
 
@@ -833,6 +984,10 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
                 setPlayerHand([]);
                 setDealerHand([]);
                 setOutcome(null);
+                setIsSplit(false);
+                setActiveHandIndex(0);
+                setPlayerHandLeft([]);
+                setPlayerHandRight([]);
               }}
               className="px-16 py-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black text-lg rounded-xl shadow-[0_0_30px_rgba(234,179,8,0.5)] hover:scale-105 active:scale-95 transition-all uppercase tracking-wider"
             >
@@ -843,8 +998,8 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
           <div className="flex gap-4 items-end">
             <ActionBtn icon="+" label="Hit" onClick={hit} disabled={loading || status !== 'playing'} />
             <ActionBtn icon="✋" label="Stand" onClick={stand} disabled={loading || status !== 'playing'} />
-            <ActionBtn icon="⏬" label="Double" onClick={doubleDown} disabled={loading || status !== 'playing'} />
-            <ActionBtn icon="✂️" label="Split" onClick={split} disabled={loading || status !== 'playing'} />
+            <ActionBtn icon="⏬" label="Double" onClick={doubleDown} disabled={loading || status !== 'playing' || (isSplit ? (activeHandIndex === 0 ? playerHandLeft : playerHandRight).length !== 2 : playerHand.length !== 2)} />
+            <ActionBtn icon="✂️" label="Split" onClick={split} disabled={loading || status !== 'playing' || !(!isSplit && playerHand.length === 2 && (playerHand[0]?.value === playerHand[1]?.value || (['10', 'J', 'Q', 'K'].includes(playerHand[0]?.value) && ['10', 'J', 'Q', 'K'].includes(playerHand[1]?.value))))} />
             {loading && (
               <div className="absolute top-[-40px] left-1/2 -translate-x-1/2 text-white font-bold animate-pulse">Waiting for BSC Testnet...</div>
             )}

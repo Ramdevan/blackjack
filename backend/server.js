@@ -28,7 +28,7 @@ initDB().then(() => {
 }).catch(err => console.error(err));
 
 // --- Blockchain Watcher Configuration ---
-const CONTRACT_ADDRESS = "0x5DB6154b5D007eae6DE7A4a8F30399861f22e61A";
+const CONTRACT_ADDRESS = "0x7a506b8d0De0Ebb328BBF5821B808de6E9a77219";
 const BSC_RPC = "https://bnb-testnet.api.onfinality.io/public"; // Non-Cloudflare stable HTTPS Port 443 public RPC
 const ABI = [
   "event GameSettled(address indexed player, uint256 indexed gameId, uint256 betAmount, uint256 payout)"

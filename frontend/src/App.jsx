@@ -15,7 +15,7 @@ function AppContent() {
   const [balance, setBalance] = useState("0.00");
   const [currentBet, setCurrentBet] = useState(0);
   const [lastWin, setLastWin] = useState(0);
-  const [gameMode, setGameMode] = useState(null); 
+  const [gameMode, setGameMode] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [authData, setAuthData] = useState(null);
 
@@ -216,7 +216,7 @@ function AppContent() {
               <div className="flex flex-col items-end">
                 <div className="flex items-center gap-2">
                   {isAdmin && <span className="text-[8px] bg-red-600 text-white font-black px-1.5 py-0.5 rounded uppercase tracking-tighter">Admin</span>}
-                  <span className="text-xs font-black text-white">{address.slice(0,6)}...{address.slice(-4)}</span>
+                  <span className="text-xs font-black text-white">{address.slice(0, 6)}...{address.slice(-4)}</span>
                 </div>
                 <button onClick={handleLogout} className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors">Disconnect</button>
               </div>

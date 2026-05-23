@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 're
 import { ethers } from 'ethers';
 import toast, { Toaster } from 'react-hot-toast';
 import { BlackjackWeb2 } from './components/BlackjackWeb2';
+import { BlackjackMultiplayer } from './components/BlackjackMultiplayer';
 import AdminPanel from './components/AdminPanel';
 import Deposit from './components/Deposit';
 import { getTokenContract } from './utils/contract';
@@ -26,6 +27,30 @@ function AppContent() {
 
   const ADMIN_ADDRESS = "0x2818bA353dFF5CB15310b438f122110d41D7b995".toLowerCase();
 
+  const changeGameMode = (mode) => {
+    setGameMode(mode);
+    if (mode) {
+      localStorage.setItem('bj_game_mode', mode);
+    } else {
+      localStorage.removeItem('bj_game_mode');
+      const keys = [
+        'bj_active_game_id',
+        'bj_status',
+        'bj_player_hand',
+        'bj_dealer_hand',
+        'bj_is_split',
+        'bj_active_hand_index',
+        'bj_player_hand_left',
+        'bj_player_hand_right',
+        'bj_outcome',
+        'bj_pending_outcome',
+        'bj_pending_payout',
+        'bj_is_turn_finished'
+      ];
+      keys.forEach(k => localStorage.removeItem(k));
+    }
+  };
+
   useEffect(() => {
     const savedAuth = sessionStorage.getItem('web3_auth');
     if (savedAuth) {
@@ -40,6 +65,12 @@ function AppContent() {
       const parsed = JSON.parse(savedAdminAuth);
       setAdminAddress(parsed.address);
       setAdminAuthData(parsed);
+    }
+
+    // Restore game mode from localStorage if active
+    const savedMode = localStorage.getItem('bj_game_mode');
+    if (savedMode) {
+      setGameMode(savedMode);
     }
   }, []);
 
@@ -151,7 +182,7 @@ function AppContent() {
     sessionStorage.removeItem('web3_auth');
     setAddress(null);
     setAuthData(null);
-    setGameMode(null);
+    changeGameMode(null);
     toast.success("User Disconnected");
     navigate('/');
   };
@@ -181,7 +212,7 @@ function AppContent() {
     return (
       <header className="w-full max-w-6xl mx-auto mt-6 bg-black/80 backdrop-blur-xl rounded-3xl px-8 py-4 flex justify-between items-center z-10 border border-white/5 shadow-2xl">
         <div className="flex items-center gap-6">
-          <Link to="/" className="text-xl font-black text-white tracking-tighter hover:scale-105 transition-transform">ROYALE <span className="text-emerald-500">21</span></Link>
+          <Link to="/" className="text-xl font-black text-white tracking-tighter hover:scale-105 transition-transform">BLACKJACK</Link>
         </div>
 
         <div className="hidden md:flex items-center gap-12">
@@ -295,14 +326,14 @@ function AppContent() {
                       title="Single Player"
                       desc="Private table. Fast rounds."
                       icon="🃏"
-                      onClick={() => setGameMode('single')}
+                      onClick={() => changeGameMode('single')}
                       color="from-blue-600 to-indigo-700"
                     />
                     <ModeCard
                       title="Multiplayer"
                       desc="Shared table. Play with others."
                       icon="👥"
-                      onClick={() => setGameMode('multiplayer')}
+                      onClick={() => changeGameMode('multiplayer')}
                       color="from-purple-600 to-pink-700"
                     />
                   </div>
@@ -310,18 +341,28 @@ function AppContent() {
               ) : (
                 <div className="w-full relative">
                   <button
-                    onClick={() => setGameMode(null)}
+                    onClick={() => changeGameMode(null)}
                     className="absolute top-[-40px] left-4 text-slate-400 hover:text-white flex items-center gap-2 text-xs font-bold transition-all"
                   >
                     ← BACK TO LOBBY
                   </button>
-                  <BlackjackWeb2
-                    authData={authData}
-                    gameMode={gameMode}
-                    setBalance={setBalance}
-                    setCurrentBet={setCurrentBet}
-                    setLastWin={setLastWin}
-                  />
+                  {gameMode === 'single' ? (
+                    <BlackjackWeb2
+                      authData={authData}
+                      gameMode={gameMode}
+                      setBalance={setBalance}
+                      setCurrentBet={setCurrentBet}
+                      setLastWin={setLastWin}
+                    />
+                  ) : (
+                    <BlackjackMultiplayer
+                      authData={authData}
+                      gameMode={gameMode}
+                      setBalance={setBalance}
+                      setCurrentBet={setCurrentBet}
+                      setLastWin={setLastWin}
+                    />
+                  )}
                 </div>
               )}
             </div>

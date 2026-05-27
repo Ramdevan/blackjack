@@ -91,27 +91,27 @@ body {
   transform: scale(1.1) translateY(-5px);
 }
 
-.chip-1 {
+.chip-10 {
   background-color: #ef4444;
   border-color: #fff;
 }
 
-.chip-10 {
+.chip-25 {
   background-color: #facc15;
   border-color: #fff;
 }
 
-.chip-100 {
+.chip-50 {
   background-color: #22c55e;
   border-color: #fff;
 }
 
-.chip-1k {
+.chip-100 {
   background-color: #3b82f6;
   border-color: #fff;
 }
 
-.chip-10k {
+.chip-250 {
   background-color: #a855f7;
   border-color: #fff;
 }

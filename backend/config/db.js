@@ -60,6 +60,8 @@ export async function initDB() {
       CREATE TABLE IF NOT EXISTS game_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NOT NULL,
+        table_id INT DEFAULT NULL,
+        is_split TINYINT DEFAULT 0,
         bet_amount DECIMAL(15,2) NOT NULL,
         payout DECIMAL(15,2) NOT NULL,
         result VARCHAR(50),

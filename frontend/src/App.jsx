@@ -6,6 +6,7 @@ import { BlackjackWeb2 } from './components/BlackjackWeb2';
 import { BlackjackMultiplayer } from './components/BlackjackMultiplayer';
 import AdminPanel from './components/AdminPanel';
 import Deposit from './components/Deposit';
+import PlayerHistoryPage from './components/PlayerHistoryPage';
 import { getTokenContract } from './utils/contract';
 
 // Helper component to access navigation inside BrowserRouter
@@ -19,6 +20,8 @@ function AppContent() {
   const [gameMode, setGameMode] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [authData, setAuthData] = useState(null);
+
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // Separate state for Admin
   const [adminAddress, setAdminAddress] = useState(null);
@@ -73,6 +76,10 @@ function AppContent() {
       setGameMode(savedMode);
     }
   }, []);
+
+  useEffect(() => {
+    setShowProfileMenu(false);
+  }, [location.pathname]);
 
   const fetchBalance = async (userAddress) => {
     try {
@@ -130,6 +137,9 @@ function AppContent() {
       const signer = await provider.getSigner();
       const message = "Sign this message to play Blackjack and verify your identity.";
       const signature = await signer.signMessage(message);
+
+      // Force lobby (select table) redirect upon fresh connection
+      changeGameMode(null);
 
       setAddress(userAddress);
       setAuthData({ address: userAddress, signature, message });
@@ -205,69 +215,6 @@ function AppContent() {
 
   const isAdmin = address?.toLowerCase() === ADMIN_ADDRESS;
 
-  // Header Component
-  const Header = () => {
-    if (location.pathname === '/admin') return null;
-
-    return (
-      <header className="w-full max-w-6xl mx-auto mt-6 bg-black/80 backdrop-blur-xl rounded-3xl px-8 py-4 flex justify-between items-center z-10 border border-white/5 shadow-2xl">
-        <div className="flex items-center gap-6">
-          <Link to="/" className="text-xl font-black text-white tracking-tighter hover:scale-105 transition-transform">BLACKJACK</Link>
-        </div>
-
-        <div className="hidden md:flex items-center gap-12">
-          <div className="flex flex-col items-center">
-            <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Balance</span>
-            <span className="text-lg font-black text-white tracking-tight">{Number(balance).toLocaleString()} <span className="text-[10px] text-slate-500">TKN</span></span>
-          </div>
-          {gameMode && (
-            <>
-              <div className="flex flex-col items-center">
-                <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Bet</span>
-                <span className="text-lg font-black text-white tracking-tight">{Number(currentBet).toLocaleString()}</span>
-              </div>
-              <div className="flex flex-col items-center">
-                <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Win</span>
-                <span className="text-lg font-black text-emerald-400 tracking-tight">{Number(lastWin).toLocaleString()}</span>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleBuyChipsClick}
-            className="bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[10px] px-5 py-2 rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-emerald-500/20 mr-2"
-          >
-            Buy Chips
-          </button>
-
-          {address ? (
-            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="flex flex-col items-end">
-                <div className="flex items-center gap-2">
-                  {isAdmin && <span className="text-[8px] bg-red-600 text-white font-black px-1.5 py-0.5 rounded uppercase tracking-tighter">Admin</span>}
-                  <span className="text-xs font-black text-white">{address.slice(0, 6)}...{address.slice(-4)}</span>
-                </div>
-                <button onClick={handleLogout} className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors">Disconnect</button>
-              </div>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-inner border border-white/10 ${isAdmin ? 'bg-red-600/20 text-red-500' : 'bg-blue-600/20 text-blue-500'}`}>
-                {isAdmin ? '🛡️' : '👤'}
-              </div>
-              {isAdmin && (
-                <Link to="/admin" className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center transition-all border border-white/5">
-                  ⚙️
-                </Link>
-              )}
-            </div>
-          ) : (
-            <button onClick={connectWallet} className="bg-white text-black font-black text-[10px] px-6 py-2 rounded-xl hover:scale-105 transition-all uppercase tracking-widest">Connect</button>
-          )}
-        </div>
-      </header>
-    );
-  };
-
   return (
     <div className="min-h-screen relative flex flex-col items-center overflow-x-hidden">
       <div className="table-edge"></div>
@@ -287,14 +234,78 @@ function AppContent() {
         }}
       />
 
-      <Header />
+      {location.pathname !== '/admin' && (
+        <header className="w-full max-w-6xl mx-auto mt-6 bg-black/80 backdrop-blur-xl rounded-3xl px-8 py-4 flex justify-between items-center z-30 border border-white/5 shadow-2xl">
+          <div className="flex items-center gap-6">
+            <Link to="/" className="text-xl font-black text-white tracking-tighter hover:scale-105 transition-transform">BLACKJACK</Link>
+          </div>
 
-      {/* Background Decor */}
-      <div className="absolute top-[25%] text-center opacity-[0.05] pointer-events-none z-0">
-        <h1 className="text-[12rem] font-black text-white font-serif tracking-widest uppercase">
-          Blackjack
-        </h1>
-      </div>
+          <div className="hidden md:flex items-center gap-12">
+            <div className="flex flex-col items-center">
+              <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Balance</span>
+              <span className="text-lg font-black text-white tracking-tight">{Number(balance).toLocaleString()} <span className="text-[10px] text-slate-500">TKN</span></span>
+            </div>
+            {gameMode && (
+              <>
+                <div className="flex flex-col items-center">
+                  <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Bet</span>
+                  <span className="text-lg font-black text-white tracking-tight">{Number(currentBet).toLocaleString()}</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Win</span>
+                  <span className="text-lg font-black text-emerald-400 tracking-tight">{Number(lastWin).toLocaleString()}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleBuyChipsClick}
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[10px] px-5 py-2 rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-emerald-500/20 mr-2"
+            >
+              Buy Chips
+            </button>
+
+            {address ? (
+              <div className="flex items-center gap-3 pl-4 border-l border-white/10 relative">
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center gap-2">
+                    {isAdmin && <span className="text-[8px] bg-red-600 text-white font-black px-1.5 py-0.5 rounded uppercase tracking-tighter">Admin</span>}
+                    <span className="text-xs font-black text-white">{address.slice(0, 6)}...{address.slice(-4)}</span>
+                  </div>
+                  <button onClick={handleLogout} className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors">Disconnect</button>
+                </div>
+                <button 
+                  onClick={() => setShowProfileMenu(!showProfileMenu)}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-inner border border-white/10 transition-all duration-300 hover:scale-105 active:scale-95 ${isAdmin ? 'bg-red-600/20 text-red-500 hover:bg-red-600/30' : 'bg-blue-600/20 text-blue-500 hover:bg-blue-600/30'} cursor-pointer`}
+                >
+                  {isAdmin ? '🛡️' : '👤'}
+                </button>
+                {isAdmin && (
+                  <Link to="/admin" className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center transition-all border border-white/5">
+                    ⚙️
+                  </Link>
+                )}
+
+                {/* Profile Menu Dropdown with separate Game History link */}
+                {showProfileMenu && (
+                  <div className="absolute right-0 top-14 w-48 bg-slate-900/95 border border-white/10 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-3 duration-300 backdrop-blur-xl">
+                    <Link 
+                      to="/history"
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 text-slate-300 hover:text-white transition-all text-xs font-black uppercase tracking-wider cursor-pointer"
+                    >
+                      <span>📜</span> Game History
+                    </Link>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button onClick={connectWallet} className="bg-white text-black font-black text-[10px] px-6 py-2 rounded-xl hover:scale-105 transition-all uppercase tracking-widest">Connect</button>
+            )}
+          </div>
+        </header>
+      )}
 
       {/* Main Content */}
       <main className="w-full max-w-7xl mx-auto flex-1 z-10 flex flex-col items-center justify-center pb-20 pt-12">
@@ -376,6 +387,7 @@ function AppContent() {
             />
           } />
           <Route path="/deposit" element={<Deposit address={address} connectWallet={connectWallet} isConnecting={isConnecting} setBalance={setBalance} />} />
+          <Route path="/history" element={<PlayerHistoryPage address={address} />} />
         </Routes>
       </main>
     </div>

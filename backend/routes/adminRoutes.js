@@ -51,6 +51,25 @@ router.get('/history', async (req, res) => {
   }
 });
 
+// Get User Specific Game History
+router.get('/history/:address', async (req, res) => {
+  const { address } = req.params;
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query(`
+      SELECT h.* 
+      FROM game_history h 
+      JOIN users u ON h.user_id = u.id 
+      WHERE LOWER(u.wallet_address) = ? 
+      ORDER BY h.created_at DESC 
+      LIMIT 20
+    `, [address.toLowerCase()]);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get Settings
 router.get('/settings', async (req, res) => {
   try {

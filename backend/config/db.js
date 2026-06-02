@@ -70,6 +70,21 @@ export async function initDB() {
       )
     `);
 
+    // Add game_mode column if it does not exist
+    try {
+      const [columns] = await pool.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'game_history' AND COLUMN_NAME = 'game_mode'
+      `, [dbName]);
+      if (columns.length === 0) {
+        await pool.query("ALTER TABLE game_history ADD COLUMN game_mode VARCHAR(50) DEFAULT 'single';");
+        console.log('Database: Added game_mode column to game_history table');
+      }
+    } catch (colErr) {
+      console.error('Error adding game_mode column:', colErr);
+    }
+
     // Create settings table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS settings (
@@ -82,6 +97,25 @@ export async function initDB() {
     await pool.query(`
       INSERT IGNORE INTO settings (\`key\`, \`value\`) VALUES ('token_price', '1000')
     `);
+
+    // Retroactive game mode migration for historical multiplayer tables
+    try {
+      await pool.query(`
+        UPDATE game_history 
+        SET game_mode = 'multiplayer' 
+        WHERE table_id IN (
+          SELECT table_id FROM (
+            SELECT table_id FROM game_history 
+            WHERE table_id IS NOT NULL AND table_id > 0
+            GROUP BY table_id 
+            HAVING COUNT(DISTINCT user_id) > 1 OR COUNT(id) > 2
+          ) as temp
+        )
+      `);
+      console.log('Database: Retroactively migrated game modes for historical tables');
+    } catch (migErr) {
+      console.error('Failed to run retroactive game_mode migration:', migErr.message);
+    }
     
     console.log('Database initialized successfully with Web2 schema');
   } catch (error) {

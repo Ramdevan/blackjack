@@ -285,10 +285,10 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       const tx = await tokenContract.approve(CONTRACT_ADDRESS, ethers.MaxUint256);
       await tx.wait();
       await checkAllowance(tokenContract, authData.address);
-      alert('Tokens approved!');
+      toast.success('Tokens approved successfully!');
     } catch (err) {
       console.error(err);
-      alert('Approval failed');
+      toast.error('Approval failed');
     } finally {
       setLoading(false);
     }
@@ -314,7 +314,7 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       const amount = ethers.parseUnits(betAmount.toString(), tokenDecimals);
       if (allowance < amount) {
         setLoading(false);
-        return alert('Insufficient allowance. Please approve tokens.');
+        return toast.error('Insufficient allowance. Please approve tokens.');
       }
 
       // 1. Create a table on-chain
@@ -359,7 +359,7 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       toast.success("Game Started!");
     } catch (err) {
       console.error(err);
-      alert('Transaction failed');
+      toast.error('Transaction failed');
     } finally {
       setLoading(false);
     }
@@ -931,6 +931,27 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
     return score;
   };
 
+  const getHandOutcome = (handCards, dealerCards) => {
+    if (!handCards || handCards.length === 0) return 'loss';
+    const score = calculateScore(handCards);
+    const dScore = calculateScore(dealerCards);
+    
+    if (score > 21) return 'loss'; // Busted
+    if (dScore > 21) return 'win'; // Dealer busted
+    
+    // Check blackjack
+    const isDealerBJ = dealerCards.length === 2 && dScore === 21;
+    const isPlayerBJ = handCards.length === 2 && score === 21;
+    
+    if (isPlayerBJ && !isDealerBJ) return 'win';
+    if (!isPlayerBJ && isDealerBJ) return 'loss';
+    if (isPlayerBJ && isDealerBJ) return 'push';
+    
+    if (score > dScore) return 'win';
+    if (score < dScore) return 'loss';
+    return 'push';
+  };
+
   const needsApproval = allowance < ethers.parseUnits(betAmount.toString() || "0", tokenDecimals);
 
   return (
@@ -955,15 +976,41 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       {/* Outcome Banner */}
       {status === 'settled' && outcome && (
         <div className="my-4 animate-in zoom-in-50 duration-500 flex flex-col items-center">
-          <div className={`px-8 py-3 rounded-2xl border text-2xl font-black tracking-widest uppercase shadow-[0_0_35px_rgba(0,0,0,0.8)] ${outcome === 'win'
-            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-emerald-500/20'
-            : outcome === 'push'
-              ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-500/20'
-              : 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20'
-            }`}>
-            {outcome === 'win' && "🏆 You Win!"}
-            {outcome === 'push' && "🤝 Push / Tie"}
-            {outcome === 'loss' && "❌ Dealer Wins"}
+          <div className={`px-8 py-3 rounded-2xl border text-2xl font-black tracking-widest uppercase shadow-[0_0_35px_rgba(0,0,0,0.8)] ${
+            outcome === 'win'
+              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-emerald-500/20'
+              : outcome === 'push'
+                ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-500/20'
+                : 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20'
+          }`}>
+            {isSplit ? (
+              <>
+                {outcome === 'win' && (
+                  getHandOutcome(playerHandLeft, dealerHand) === 'win' && getHandOutcome(playerHandRight, dealerHand) === 'win'
+                    ? "🏆 Won Both Hands!"
+                    : "🏆 Net Win!"
+                )}
+                {outcome === 'push' && (
+                  (getHandOutcome(playerHandLeft, dealerHand) === 'win' && getHandOutcome(playerHandRight, dealerHand) === 'loss') ||
+                  (getHandOutcome(playerHandLeft, dealerHand) === 'loss' && getHandOutcome(playerHandRight, dealerHand) === 'win')
+                    ? "🤝 Even Money (Win 1, Lose 1)"
+                    : getHandOutcome(playerHandLeft, dealerHand) === 'push' && getHandOutcome(playerHandRight, dealerHand) === 'push'
+                      ? "🤝 Push Both Hands"
+                      : "🤝 Even Money / Push"
+                )}
+                {outcome === 'loss' && (
+                  getHandOutcome(playerHandLeft, dealerHand) === 'loss' && getHandOutcome(playerHandRight, dealerHand) === 'loss'
+                    ? "❌ Lost Both Hands"
+                    : "❌ Net Loss"
+                )}
+              </>
+            ) : (
+              <>
+                {outcome === 'win' && "🏆 You Win!"}
+                {outcome === 'push' && "🤝 Push / Tie"}
+                {outcome === 'loss' && "❌ Dealer Wins"}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -989,6 +1036,19 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
               <div className="px-4 py-1 bg-amber-500/20 border border-amber-500 rounded-full text-white text-xs font-bold">
                 Score: {calculateScore(playerHandLeft)}
               </div>
+              {status === 'settled' && (
+                <div className={`mt-2 px-3 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider ${
+                  getHandOutcome(playerHandLeft, dealerHand) === 'win'
+                    ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                    : getHandOutcome(playerHandLeft, dealerHand) === 'push'
+                      ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
+                      : 'bg-red-500/20 border-red-500/30 text-red-400'
+                }`}>
+                  {getHandOutcome(playerHandLeft, dealerHand) === 'win' && "🏆 Won"}
+                  {getHandOutcome(playerHandLeft, dealerHand) === 'push' && "🤝 Pushed"}
+                  {getHandOutcome(playerHandLeft, dealerHand) === 'loss' && (calculateScore(playerHandLeft) > 21 ? "💥 Busted" : "❌ Lost")}
+                </div>
+              )}
             </div>
 
             {/* Right Hand */}
@@ -1008,8 +1068,22 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
               <div className="px-4 py-1 bg-amber-500/20 border border-amber-500 rounded-full text-white text-xs font-bold">
                 Score: {calculateScore(playerHandRight)}
               </div>
+              {status === 'settled' && (
+                <div className={`mt-2 px-3 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider ${
+                  getHandOutcome(playerHandRight, dealerHand) === 'win'
+                    ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                    : getHandOutcome(playerHandRight, dealerHand) === 'push'
+                      ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
+                      : 'bg-red-500/20 border-red-500/30 text-red-400'
+                }`}>
+                  {getHandOutcome(playerHandRight, dealerHand) === 'win' && "🏆 Won"}
+                  {getHandOutcome(playerHandRight, dealerHand) === 'push' && "🤝 Pushed"}
+                  {getHandOutcome(playerHandRight, dealerHand) === 'loss' && (calculateScore(playerHandRight) > 21 ? "💥 Busted" : "❌ Lost")}
+                </div>
+              )}
             </div>
           </div>
+
         ) : (
           <div className="flex flex-col items-center">
             <div className="flex min-h-[120px] mb-4">
@@ -1090,7 +1164,7 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
             <ActionBtn icon="+" label="Hit" onClick={hit} disabled={loading || status !== 'playing'} />
             <ActionBtn icon="✋" label="Stand" onClick={stand} disabled={loading || status !== 'playing'} />
             <ActionBtn icon="⏬" label="Double" onClick={doubleDown} disabled={loading || status !== 'playing' || (isSplit ? (activeHandIndex === 0 ? playerHandLeft : playerHandRight).length !== 2 : playerHand.length !== 2)} />
-            <ActionBtn icon="✂️" label="Split" onClick={split} disabled={loading || status !== 'playing' || !(!isSplit && playerHand.length === 2 && (playerHand[0]?.value === playerHand[1]?.value || (['10', 'J', 'Q', 'K'].includes(playerHand[0]?.value) && ['10', 'J', 'Q', 'K'].includes(playerHand[1]?.value))))} />
+            <ActionBtn icon="✂️" label="Split" onClick={split} disabled={loading || status !== 'playing' || !(!isSplit && playerHand.length === 2 && playerHand[0]?.value === playerHand[1]?.value)} />
             {loading && (
               <div className="absolute top-[-40px] left-1/2 -translate-x-1/2 text-white font-bold animate-pulse">Waiting for BSC Testnet...</div>
             )}

@@ -77,6 +77,49 @@ function AppContent() {
     }
   }, []);
 
+  // Listen to MetaMask account and chain changes dynamically to prevent stale state reverts
+  useEffect(() => {
+    if (window.ethereum) {
+      const handleAccountsChanged = (accounts) => {
+        if (accounts.length === 0) {
+          setAddress(null);
+          setAuthData(null);
+          sessionStorage.removeItem('web3_auth');
+          changeGameMode(null);
+          toast.error("Wallet disconnected!");
+        } else {
+          // If active address in MetaMask differs from auth state, prompt re-connection
+          const savedAuth = sessionStorage.getItem('web3_auth');
+          const currentSessionAddress = savedAuth ? JSON.parse(savedAuth).address : null;
+          if (currentSessionAddress && accounts[0].toLowerCase() !== currentSessionAddress.toLowerCase()) {
+            setAddress(null);
+            setAuthData(null);
+            sessionStorage.removeItem('web3_auth');
+            changeGameMode(null);
+            toast.error("MetaMask account changed. Please reconnect!");
+          }
+        }
+      };
+
+      const handleChainChanged = (chainId) => {
+        // Switch network if user changes network in MetaMask
+        if (chainId !== '0x61') {
+          switchNetwork();
+        }
+      };
+
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      window.ethereum.on('chainChanged', handleChainChanged);
+
+      return () => {
+        if (window.ethereum.removeListener) {
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+          window.ethereum.removeListener('chainChanged', handleChainChanged);
+        }
+      };
+    }
+  }, []);
+
   useEffect(() => {
     setShowProfileMenu(false);
   }, [location.pathname]);
@@ -308,7 +351,7 @@ function AppContent() {
       )}
 
       {/* Main Content */}
-      <main className="w-full max-w-7xl mx-auto flex-1 z-10 flex flex-col items-center justify-center pb-20 pt-12">
+      <main className={`${location.pathname === '/admin' ? 'w-full px-8' : 'w-full max-w-7xl mx-auto items-center justify-center'} flex-1 z-10 flex flex-col pb-20 pt-12`}>
         <Routes>
           <Route path="/" element={
             <div className="w-full flex flex-col items-center">
@@ -381,6 +424,7 @@ function AppContent() {
           <Route path="/admin" element={
             <AdminPanel
               address={adminAddress}
+              adminAuthData={adminAuthData}
               connectWallet={connectAdminWallet}
               isConnecting={isAdminConnecting}
               handleLogout={handleAdminLogout}

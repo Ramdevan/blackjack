@@ -2,19 +2,58 @@ import express from 'express';
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import { getPool } from '../config/db.js';
+import { fallbackProvider } from '../utils/provider.js';
 
 dotenv.config();
 const router = express.Router();
 
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 const PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY;
-const BSC_RPC = "https://data-seed-prebsc-1-s1.binance.org:8545";
 
 const tokenABI = [
   "function transfer(address to, uint256 amount) external returns (bool)",
   "function balanceOf(address account) view returns (uint256)",
   "function decimals() view returns (uint8)"
 ];
+
+// Local middleware to verify admin signature
+const verifyAdmin = (req, res, next) => {
+  try {
+    const signature = req.headers['x-admin-signature'];
+    const message = req.headers['x-admin-message'];
+    const address = req.headers['x-admin-address'];
+
+    if (!signature || !message || !address) {
+      return res.status(401).json({ error: "Admin authorization headers missing" });
+    }
+
+    // Get expected admin address from environment or fallback
+    let expectedAdmin = "0x2818ba353dff5cb15310b438f122110d41d7b995".toLowerCase();
+    if (process.env.ADMIN_PRIVATE_KEY) {
+      try {
+        const wallet = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY);
+        expectedAdmin = wallet.address.toLowerCase();
+      } catch (e) {
+        console.error("Error deriving admin address from private key:", e);
+      }
+    }
+
+    if (address.toLowerCase() !== expectedAdmin) {
+      return res.status(403).json({ error: "Unauthorized admin address" });
+    }
+
+    // Verify signature
+    const recoveredAddress = ethers.verifyMessage(message, signature);
+    if (recoveredAddress.toLowerCase() !== expectedAdmin) {
+      return res.status(401).json({ error: "Invalid admin signature" });
+    }
+
+    next();
+  } catch (error) {
+    console.error("verifyAdmin middleware error in tokenRoutes:", error);
+    return res.status(500).json({ error: "Internal authorization error: " + error.message });
+  }
+};
 
 router.post('/credit', async (req, res) => {
   const { address, amount } = req.body;
@@ -28,7 +67,7 @@ router.post('/credit', async (req, res) => {
       throw new Error("Admin private key not configured in backend .env");
     }
 
-    const provider = new ethers.JsonRpcProvider(BSC_RPC);
+    const provider = fallbackProvider;
     const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
     const contract = new ethers.Contract(TOKEN_ADDRESS, tokenABI, wallet);
 

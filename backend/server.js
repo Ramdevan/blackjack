@@ -8,6 +8,7 @@ import dns from 'dns';
 import { initDB, getPool } from './config/db.js';
 import adminRoutes from './routes/adminRoutes.js';
 import tokenRoutes from './routes/tokenRoutes.js';
+import { fallbackProvider } from './utils/provider.js';
 
 dns.setDefaultResultOrder('ipv4first');
 
@@ -22,14 +23,34 @@ app.use(express.json());
 app.use('/api/admin', adminRoutes);
 app.use('/api/token', tokenRoutes);
 
-initDB().then(() => {
+initDB().then(async () => {
   console.log('Database initialized');
+  await loadPersistentMultiplayerTables();
   startBlockchainWatcher();
 }).catch(err => console.error(err));
 
+// --- Global Multiplayer Table Tracker ---
+export const multiplayerTableIds = new Set();
+
+// Load persistent multiplayer table IDs from DB on startup
+async function loadPersistentMultiplayerTables() {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query("SELECT `value` FROM settings WHERE `key` = 'multiplayer_tables'");
+    if (rows.length > 0 && rows[0].value) {
+      const ids = JSON.parse(rows[0].value);
+      if (Array.isArray(ids)) {
+        ids.forEach(id => multiplayerTableIds.add(Number(id)));
+        console.log(`Loaded ${ids.length} persistent multiplayer table IDs from settings.`);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load persistent multiplayer tables:", err.message);
+  }
+}
+
 // --- Blockchain Watcher Configuration ---
 const CONTRACT_ADDRESS = "0x0A9d1704ff312F90F745996C2f35eb2dFfcf69d4";
-const BSC_RPC = "https://bsc-testnet-rpc.publicnode.com";
 const ABI = [
   "event TableSettled(uint256 indexed tableId, uint8[] dealerCards, uint8 dealerScore)",
   "function getActivePlayers(uint256 tableId) view returns (address[] memory)",
@@ -40,7 +61,7 @@ const ABI = [
 async function startBlockchainWatcher() {
   console.log('Starting Robust Blockchain Watcher (Polling Mode for Multiplayer)...');
 
-  const provider = new ethers.JsonRpcProvider(BSC_RPC);
+  const provider = fallbackProvider;
   const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
   const pool = getPool();
 
@@ -142,7 +163,10 @@ async function startBlockchainWatcher() {
               }
             }
 
-            console.log(`[SYNC-PLAYER] Table ${tableId} Player ${playerAddress}: Bet ${betAmount}, Payout ${payout}, Result: ${resultType}`);
+            const isMultiplayer = multiplayerTableIds.has(Number(tableId)) || players.length > 1;
+            const mode = isMultiplayer ? 'multiplayer' : 'single';
+
+            console.log(`[SYNC-PLAYER] Table ${tableId} Player ${playerAddress}: Bet ${betAmount}, Payout ${payout}, Result: ${resultType}, Mode: ${mode}`);
 
             // Find or create user
             const [users] = await pool.query('SELECT id FROM users WHERE wallet_address = ?', [playerAddress]);
@@ -166,8 +190,8 @@ async function startBlockchainWatcher() {
 
             if (existing.length === 0) {
               await pool.query(
-                'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, result) VALUES (?, ?, 0, ?, ?, ?)',
-                [userId, tableId, betFormatted, payoutFormatted, resultType]
+                'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, result, game_mode) VALUES (?, ?, 0, ?, ?, ?, ?)',
+                [userId, tableId, betFormatted, payoutFormatted, resultType, mode]
               );
             }
 
@@ -211,10 +235,10 @@ async function startBlockchainWatcher() {
 
                 if (existingSplit.length === 0) {
                   await pool.query(
-                    'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, result) VALUES (?, ?, 1, ?, ?, ?)',
-                    [userId, tableId, splitBetFormatted, splitPayoutFormatted, splitResult]
+                    'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, result, game_mode) VALUES (?, ?, 1, ?, ?, ?, ?)',
+                    [userId, tableId, splitBetFormatted, splitPayoutFormatted, splitResult, mode]
                   );
-                  console.log(`[SYNC-SPLIT] Table ${tableId} Player ${playerAddress}: Bet ${splitBetFormatted}, Payout ${splitPayoutFormatted}, Result: ${splitResult}`);
+                  console.log(`[SYNC-SPLIT] Table ${tableId} Player ${playerAddress}: Bet ${splitBetFormatted}, Payout ${splitPayoutFormatted}, Result: ${splitResult}, Mode: ${mode}`);
                 }
               }
             } catch (splitErr) {
@@ -273,8 +297,21 @@ io.on('connection', (socket) => {
     broadcastTableState();
   });
 
-  socket.on('set-table-id', ({ tableId }) => {
+  socket.on('set-table-id', async ({ tableId }) => {
     activeTableId = Number(tableId);
+    if (activeTableId > 0) {
+      multiplayerTableIds.add(activeTableId);
+      // Persist to DB asynchronously!
+      try {
+        const pool = getPool();
+        await pool.query(
+          "INSERT INTO settings (`key`, `value`) VALUES ('multiplayer_tables', ?) ON DUPLICATE KEY UPDATE `value` = ?",
+          [JSON.stringify(Array.from(multiplayerTableIds)), JSON.stringify(Array.from(multiplayerTableIds))]
+        );
+      } catch (dbErr) {
+        console.error("Failed to persist multiplayer tables:", dbErr.message);
+      }
+    }
     console.log(`[Socket] Active Table ID set to: ${activeTableId}`);
     broadcastTableState();
   });

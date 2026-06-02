@@ -16,6 +16,12 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
   const [betAmount, setBetAmount] = useState(0);
   const [selectedChip, setSelectedChip] = useState(null);
   const [gameId, setGameId] = useState(null);
+  const [spentTableId, _setSpentTableId] = useState(null);
+  const spentTableIdRef = useRef(null);
+  const setSpentTableId = (val) => {
+    _setSpentTableId(val);
+    spentTableIdRef.current = val;
+  };
   const [playerHand, setPlayerHand] = useState([]);
   const [dealerHand, setDealerHand] = useState([]);
   const [status, setStatus] = useState('betting'); // betting, playing, settled
@@ -196,16 +202,21 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
 
         if (data.activeTableId && Number(data.activeTableId) > 0) {
           const tIdStr = data.activeTableId.toString();
-          setGameId(tIdStr);
-          localStorage.setItem('bj_active_game_id', tIdStr);
-          
-          if (data.tableState === 'playing') {
-            if (statusRef.current === 'betting') {
-              setStatus('playing');
+          if (tIdStr !== spentTableIdRef.current) {
+            setGameId(tIdStr);
+            localStorage.setItem('bj_active_game_id', tIdStr);
+            
+            if (data.tableState === 'playing') {
+              if (statusRef.current === 'betting') {
+                setStatus('playing');
+              }
+              setTimeout(() => {
+                syncCardsFromChain(tIdStr);
+              }, 500);
             }
-            setTimeout(() => {
-              syncCardsFromChain(tIdStr);
-            }, 500);
+          } else {
+            setGameId(null);
+            localStorage.removeItem('bj_active_game_id');
           }
         } else {
           setGameId(null);
@@ -240,28 +251,46 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           const synced = await syncCardsFromChain(gameId, true);
           const finalPlayerHand = synced ? synced.playerHand : playerHand;
           const finalDealerHand = synced ? synced.dealerHand : dealerHand;
-
-          const score = calculateScore(finalPlayerHand);
           const dealerScoreNum = calculateScore(finalDealerHand);
-          const busted = score > 21;
-          
-          let outcomeVal = 'loss';
-          if (!busted && score <= 21) {
-            const isDealerBlackjack = (finalDealerHand.length === 2 && dealerScoreNum === 21);
-            const isPlayerBlackjack = (finalPlayerHand.length === 2 && score === 21);
 
-            if (isPlayerBlackjack) {
-              if (isDealerBlackjack) outcomeVal = 'push';
-              else outcomeVal = 'win';
-            } else {
-              if (isDealerBlackjack) outcomeVal = 'loss';
-              else if (dealerScoreNum > 21 || score > dealerScoreNum) outcomeVal = 'win';
-              else if (score === dealerScoreNum) outcomeVal = 'push';
+          let outcomeVal = 'loss';
+          if (isSplit) {
+            const leftOutcome = getHandOutcome(playerHandLeft, finalDealerHand);
+            const rightOutcome = getHandOutcome(playerHandRight, finalDealerHand);
+
+            if (leftOutcome === 'win' && rightOutcome === 'win') {
+              outcomeVal = 'win';
+            } else if ((leftOutcome === 'win' && rightOutcome === 'push') || (leftOutcome === 'push' && rightOutcome === 'win')) {
+              outcomeVal = 'win';
+            } else if (leftOutcome === 'push' && rightOutcome === 'push') {
+              outcomeVal = 'push';
+            } else if ((leftOutcome === 'win' && rightOutcome === 'loss') || (leftOutcome === 'loss' && rightOutcome === 'win')) {
+              outcomeVal = 'push'; // Even money
+            } else if ((leftOutcome === 'push' && rightOutcome === 'loss') || (leftOutcome === 'loss' && rightOutcome === 'push')) {
+              outcomeVal = 'loss';
+            }
+          } else {
+            const score = calculateScore(finalPlayerHand);
+            const busted = score > 21;
+            
+            if (!busted && score <= 21) {
+              const isDealerBlackjack = (finalDealerHand.length === 2 && dealerScoreNum === 21);
+              const isPlayerBlackjack = (finalPlayerHand.length === 2 && score === 21);
+
+              if (isPlayerBlackjack) {
+                if (isDealerBlackjack) outcomeVal = 'push';
+                else outcomeVal = 'win';
+              } else {
+                if (isDealerBlackjack) outcomeVal = 'loss';
+                else if (dealerScoreNum > 21 || score > dealerScoreNum) outcomeVal = 'win';
+                else if (score === dealerScoreNum) outcomeVal = 'push';
+              }
             }
           }
 
           setOutcome(outcomeVal);
           setStatus('settled');
+          setSpentTableId(gameId);
           
           if (socket) {
             socket.emit('player-action', {
@@ -302,29 +331,47 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             const synced = await syncCardsFromChain(gameId, true);
             const finalPlayerHand = synced ? synced.playerHand : playerHand;
             const finalDealerHand = synced ? synced.dealerHand : dealerHand;
-            
-            const score = calculateScore(finalPlayerHand);
             const dealerScoreNum = calculateScore(finalDealerHand);
-            const busted = score > 21;
             
             let outcomeVal = 'loss';
-            if (!busted && score <= 21) {
-              const isDealerBlackjack = (finalDealerHand.length === 2 && dealerScoreNum === 21);
-              const isPlayerBlackjack = (finalPlayerHand.length === 2 && score === 21);
+            if (isSplit) {
+              const leftOutcome = getHandOutcome(playerHandLeft, finalDealerHand);
+              const rightOutcome = getHandOutcome(playerHandRight, finalDealerHand);
 
-              if (isPlayerBlackjack) {
-                if (isDealerBlackjack) outcomeVal = 'push';
-                else outcomeVal = 'win';
-              } else {
-                if (isDealerBlackjack) outcomeVal = 'loss';
-                else if (dealerScoreNum > 21 || score > dealerScoreNum) outcomeVal = 'win';
-                else if (score === dealerScoreNum) outcomeVal = 'push';
+              if (leftOutcome === 'win' && rightOutcome === 'win') {
+                outcomeVal = 'win';
+              } else if ((leftOutcome === 'win' && rightOutcome === 'push') || (leftOutcome === 'push' && rightOutcome === 'win')) {
+                outcomeVal = 'win';
+              } else if (leftOutcome === 'push' && rightOutcome === 'push') {
+                outcomeVal = 'push';
+              } else if ((leftOutcome === 'win' && rightOutcome === 'loss') || (leftOutcome === 'loss' && rightOutcome === 'win')) {
+                outcomeVal = 'push'; // Even money
+              } else if ((leftOutcome === 'push' && rightOutcome === 'loss') || (leftOutcome === 'loss' && rightOutcome === 'push')) {
+                outcomeVal = 'loss';
+              }
+            } else {
+              const score = calculateScore(finalPlayerHand);
+              const busted = score > 21;
+              
+              if (!busted && score <= 21) {
+                const isDealerBlackjack = (finalDealerHand.length === 2 && dealerScoreNum === 21);
+                const isPlayerBlackjack = (finalPlayerHand.length === 2 && score === 21);
+
+                if (isPlayerBlackjack) {
+                  if (isDealerBlackjack) outcomeVal = 'push';
+                  else outcomeVal = 'win';
+                } else {
+                  if (isDealerBlackjack) outcomeVal = 'loss';
+                  else if (dealerScoreNum > 21 || score > dealerScoreNum) outcomeVal = 'win';
+                  else if (score === dealerScoreNum) outcomeVal = 'push';
+                }
               }
             }
 
             setOutcome(outcomeVal);
             setIsTurnFinished(true);
             setStatus('settled');
+            setSpentTableId(gameId);
 
             if (socket) {
               socket.emit('player-action', {
@@ -346,6 +393,21 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     }
   }, [tableState, isTableLeader, gameId, contract]);
 
+
+  const fetchAllowanceAndBalance = async (tkContract = tokenContract, address = authData?.address) => {
+    const activeTk = tkContract || tokenContract;
+    const activeAddress = address || authData?.address;
+    if (!activeTk || !activeAddress) return;
+    try {
+      const allow = await activeTk.allowance(activeAddress, CONTRACT_ADDRESS);
+      setAllowance(allow);
+      const bal = await activeTk.balanceOf(activeAddress);
+      setBalance(ethers.formatUnits(bal, tokenDecimals || 18));
+    } catch (err) {
+      console.error("Error fetching allowance & balance:", err);
+    }
+  };
+
   useEffect(() => {
     if (window.ethereum) {
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -355,8 +417,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         setContract(bj);
         setTokenContract(tk);
 
-        tk.decimals().then(d => setTokenDecimals(d));
-        checkAllowance(tk, authData.address);
+        tk.decimals().then(d => {
+          setTokenDecimals(d);
+          fetchAllowanceAndBalance(tk, authData.address);
+        });
 
         // Fetch dynamic contract boundaries to prevent on-chain revert errors
         bj.minBet().then(mb => setMinBetLimit(Number(ethers.formatUnits(mb, 18)))).catch(console.error);
@@ -384,6 +448,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
 
               if (Number(table.state) >= 2) {
                 setStatus('settled');
+                setSpentTableId(savedGameId);
               } else {
                 setStatus('playing');
                 setTimeout(() => {
@@ -408,18 +473,13 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     }
   }, [authData.address]);
 
-  const checkAllowance = async (tk, owner) => {
-    const allow = await tk.allowance(owner, CONTRACT_ADDRESS);
-    setAllowance(allow);
-  };
-
   const approveTokens = async () => {
     if (!tokenContract) return;
     setLoading(true);
     try {
       const tx = await tokenContract.approve(CONTRACT_ADDRESS, ethers.MaxUint256);
       await tx.wait();
-      await checkAllowance(tokenContract, authData.address);
+      await fetchAllowanceAndBalance(tokenContract, authData.address);
       toast.success('Tokens approved!');
     } catch (err) {
       console.error(err);
@@ -633,6 +693,30 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     setOutcome(null);
     try {
       const betWei = ethers.parseUnits(betAmount.toString(), tokenDecimals);
+
+      // Double-check active signer address in MetaMask to prevent wallet desync reverts
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const signerAddress = await signer.getAddress();
+        if (signerAddress.toLowerCase() !== authData.address.toLowerCase()) {
+          toast.error("Wallet desync detected! Account changed in MetaMask. Reconnecting...", { id: 'wallet-desync' });
+          setLoading(false);
+          sessionStorage.removeItem('web3_auth');
+          window.location.reload();
+          return;
+        }
+      }
+
+      // Verify on-chain allowance dynamically in real-time to prevent reverted transactions
+      const latestAllowance = await tokenContract.allowance(authData.address, CONTRACT_ADDRESS);
+      setAllowance(latestAllowance);
+      if (latestAllowance < betWei) {
+        toast.error("Insufficient allowance! Please click 'APPROVE TOKENS' first.", { id: 'allowance-err' });
+        setLoading(false);
+        return;
+      }
+
       let targetTableId = gameId;
 
       // 1. If there's no active table ID yet, create one
@@ -959,7 +1043,9 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       // 2. Double check and auto-approve token allowance for the additional bet if needed
       const playerDetailsBefore = await contract.getPlayerBetDetails(activeId, authData.address);
       const additionalBet = playerDetailsBefore.betAmount;
-      if (allowance < additionalBet) {
+      const currentAllowance = await tokenContract.allowance(authData.address, CONTRACT_ADDRESS);
+      setAllowance(currentAllowance);
+      if (currentAllowance < additionalBet) {
         toast.success("Approving additional chips for double down...", { id: 'double-allow' });
         const approveTx = await tokenContract.approve(CONTRACT_ADDRESS, ethers.MaxUint256);
         await approveTx.wait();
@@ -1077,7 +1163,9 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       // 2. Double check and auto-approve token allowance for the additional bet if needed
       const playerDetailsBefore = await contract.getPlayerBetDetails(activeId, authData.address);
       const additionalBet = playerDetailsBefore.betAmount;
-      if (allowance < additionalBet) {
+      const currentAllowance = await tokenContract.allowance(authData.address, CONTRACT_ADDRESS);
+      setAllowance(currentAllowance);
+      if (currentAllowance < additionalBet) {
         toast.success("Approving additional chips for split...", { id: 'split-allow' });
         const approveTx = await tokenContract.approve(CONTRACT_ADDRESS, ethers.MaxUint256);
         await approveTx.wait();
@@ -1184,6 +1272,27 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     return score;
   };
 
+  const getHandOutcome = (handCards, dealerCards) => {
+    if (!handCards || handCards.length === 0) return 'loss';
+    const score = calculateScore(handCards);
+    const dScore = calculateScore(dealerCards);
+    
+    if (score > 21) return 'loss'; // Busted
+    if (dScore > 21) return 'win'; // Dealer busted
+    
+    // Check blackjack
+    const isDealerBJ = dealerCards.length === 2 && dScore === 21;
+    const isPlayerBJ = handCards.length === 2 && score === 21;
+    
+    if (isPlayerBJ && !isDealerBJ) return 'win';
+    if (!isPlayerBJ && isDealerBJ) return 'loss';
+    if (isPlayerBJ && isDealerBJ) return 'push';
+    
+    if (score > dScore) return 'win';
+    if (score < dScore) return 'loss';
+    return 'push';
+  };
+
   const needsApproval = allowance < ethers.parseUnits(betAmount.toString() || "0", tokenDecimals);
 
   return (
@@ -1208,15 +1317,41 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       {/* Outcome Banner */}
       {status === 'settled' && outcome && (
         <div className="my-4 animate-in zoom-in-50 duration-500 flex flex-col items-center">
-          <div className={`px-8 py-3 rounded-2xl border text-2xl font-black tracking-widest uppercase shadow-[0_0_35px_rgba(0,0,0,0.8)] ${outcome === 'win'
-            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-emerald-500/20'
-            : outcome === 'push'
-              ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-500/20'
-              : 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20'
-            }`}>
-            {outcome === 'win' && "🏆 You Win!"}
-            {outcome === 'push' && "🤝 Push / Tie"}
-            {outcome === 'loss' && "❌ Dealer Wins"}
+          <div className={`px-8 py-3 rounded-2xl border text-2xl font-black tracking-widest uppercase shadow-[0_0_35px_rgba(0,0,0,0.8)] ${
+            outcome === 'win'
+              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-emerald-500/20'
+              : outcome === 'push'
+                ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-500/20'
+                : 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20'
+          }`}>
+            {isSplit ? (
+              <>
+                {outcome === 'win' && (
+                  getHandOutcome(playerHandLeft, dealerHand) === 'win' && getHandOutcome(playerHandRight, dealerHand) === 'win'
+                    ? "🏆 Won Both Hands!"
+                    : "🏆 Net Win!"
+                )}
+                {outcome === 'push' && (
+                  (getHandOutcome(playerHandLeft, dealerHand) === 'win' && getHandOutcome(playerHandRight, dealerHand) === 'loss') ||
+                  (getHandOutcome(playerHandLeft, dealerHand) === 'loss' && getHandOutcome(playerHandRight, dealerHand) === 'win')
+                    ? "🤝 Even Money (Win 1, Lose 1)"
+                    : getHandOutcome(playerHandLeft, dealerHand) === 'push' && getHandOutcome(playerHandRight, dealerHand) === 'push'
+                      ? "🤝 Push Both Hands"
+                      : "🤝 Even Money / Push"
+                )}
+                {outcome === 'loss' && (
+                  getHandOutcome(playerHandLeft, dealerHand) === 'loss' && getHandOutcome(playerHandRight, dealerHand) === 'loss'
+                    ? "❌ Lost Both Hands"
+                    : "❌ Net Loss"
+                )}
+              </>
+            ) : (
+              <>
+                {outcome === 'win' && "🏆 You Win!"}
+                {outcome === 'push' && "🤝 Push / Tie"}
+                {outcome === 'loss' && "❌ Dealer Wins"}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1244,7 +1379,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                       <span className="text-[7px] text-slate-400 mb-1">Left ({calculateScore(otherPlayers[0].cardsLeft || [])})</span>
                       <div className="flex justify-center min-h-[45px] relative">
                         <div className="flex">
-                          {otherPlayers[0].cardsLeft && otherPlayers[0].cardsLeft.map((c, idx) => (
+                           {otherPlayers[0].cardsLeft && otherPlayers[0].cardsLeft.map((c, idx) => (
                             <div key={idx} className="transform transition-transform" style={{ marginLeft: idx > 0 ? '-25px' : '0', zIndex: idx }}>
                               <div className="scale-75 origin-top-left">
                                 <Web2Card suit={c.suit} value={c.value} />
@@ -1316,6 +1451,19 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 <div className="px-4 py-1 bg-amber-500/20 border border-amber-500 rounded-full text-white text-xs font-bold">
                   Score: {calculateScore(playerHandLeft)}
                 </div>
+                {status === 'settled' && (
+                  <div className={`mt-2 px-3 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider ${
+                    getHandOutcome(playerHandLeft, dealerHand) === 'win'
+                      ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                      : getHandOutcome(playerHandLeft, dealerHand) === 'push'
+                        ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
+                        : 'bg-red-500/20 border-red-500/30 text-red-400'
+                  }`}>
+                    {getHandOutcome(playerHandLeft, dealerHand) === 'win' && "🏆 Won"}
+                    {getHandOutcome(playerHandLeft, dealerHand) === 'push' && "🤝 Pushed"}
+                    {getHandOutcome(playerHandLeft, dealerHand) === 'loss' && (calculateScore(playerHandLeft) > 21 ? "💥 Busted" : "❌ Lost")}
+                  </div>
+                )}
               </div>
 
               {/* Right Hand */}
@@ -1335,6 +1483,19 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 <div className="px-4 py-1 bg-amber-500/20 border border-amber-500 rounded-full text-white text-xs font-bold">
                   Score: {calculateScore(playerHandRight)}
                 </div>
+                {status === 'settled' && (
+                  <div className={`mt-2 px-3 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider ${
+                    getHandOutcome(playerHandRight, dealerHand) === 'win'
+                      ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                      : getHandOutcome(playerHandRight, dealerHand) === 'push'
+                        ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
+                        : 'bg-red-500/20 border-red-500/30 text-red-400'
+                  }`}>
+                    {getHandOutcome(playerHandRight, dealerHand) === 'win' && "🏆 Won"}
+                    {getHandOutcome(playerHandRight, dealerHand) === 'push' && "🤝 Pushed"}
+                    {getHandOutcome(playerHandRight, dealerHand) === 'loss' && (calculateScore(playerHandRight) > 21 ? "💥 Busted" : "❌ Lost")}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -1510,6 +1671,9 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 setBetAmount(0);
                 setSelectedChip(null);
                 setBetPlaced(false);
+                setGameId(null);
+                localStorage.removeItem('bj_active_game_id');
+                localStorage.removeItem('bj_status');
                 if (socket) {
                   socket.emit('player-action', { action: 'reset' });
                 }

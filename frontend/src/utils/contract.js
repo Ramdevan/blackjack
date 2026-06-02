@@ -37,7 +37,8 @@ export const blackjackABI = [
   "event RoundStarted(uint256 indexed tableId, uint8[] dealerCards)",
   "event PlayerAction(uint256 indexed tableId, address indexed player, string action, uint8[] cards, uint8 score)",
   "event TableSettled(uint256 indexed tableId, uint8[] dealerCards, uint8 dealerScore)",
-  "event TimeoutTriggered(uint256 indexed tableId, address indexed timedOutPlayer, address indexed triggerer)"
+  "event TimeoutTriggered(uint256 indexed tableId, address indexed timedOutPlayer, address indexed triggerer)",
+  "function withdrawTokens(address token, uint256 amount) external"
 ];
 
 // Standard ERC20 ABI
@@ -47,7 +48,8 @@ export const tokenABI = [
   "function balanceOf(address account) view returns (uint256)",
   "function decimals() view returns (uint8)",
   "function transfer(address to, uint256 amount) external returns (bool)",
-  "function mint(address to, uint256 amount) external"
+  "function mint(address to, uint256 amount) external",
+  "function totalSupply() view returns (uint256)"
 ];
 
 // BSC Testnet Addresses

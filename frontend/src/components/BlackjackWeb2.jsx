@@ -203,6 +203,9 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
 
               if (Number(table.state) >= 2) {
                 setStatus('settled');
+                syncCardsFromChain(savedGameId).then(() => {
+                  evaluateGameOutcome(details, table);
+                });
               } else {
                 setStatus('playing');
                 setTimeout(() => {
@@ -341,7 +344,9 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       // 2. Place bet
       toast.success("Placing bet on-chain...", { duration: 3000 });
       const gasEstimate = await contract.placeBet.estimateGas(newTableId, amount).catch(() => 150000n);
-      const tx = await contract.placeBet(newTableId, amount, { gasLimit: (gasEstimate * 130n) / 100n });
+      const tx = await contract.placeBet(newTableId, amount, {
+        gasLimit: gasEstimate > 200000n ? (gasEstimate * 150n) / 100n : 250000n
+      });
       await tx.wait();
 
       // 3. Start round immediately (since it's a single player, no need to wait!)
@@ -355,8 +360,18 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       // Sync authentic cards from contract
       await syncCardsFromChain(newTableId);
 
-      setStatus('playing');
-      toast.success("Game Started!");
+      const tableInfo = await contract.tables(newTableId);
+      if (Number(tableInfo.state) >= 2) {
+        const playerDetails = await safeGetPlayerBetDetails(newTableId, authData.address);
+        await evaluateGameOutcome(playerDetails, tableInfo);
+        if (tokenContract) {
+          const balance = await tokenContract.balanceOf(authData.address);
+          setBalance(ethers.formatUnits(balance, tokenDecimals));
+        }
+      } else {
+        setStatus('playing');
+        toast.success("Game Started!");
+      }
     } catch (err) {
       console.error(err);
       toast.error('Transaction failed');
@@ -466,7 +481,9 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       }
 
       const gasEstimate = await contract.hit.estimateGas(gameId).catch(() => 150000n);
-      const tx = await contract.hit(gameId, { gasLimit: (gasEstimate * 130n) / 100n });
+      const tx = await contract.hit(gameId, {
+        gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n
+      });
       toast.success("Dealing card...", { duration: 2000 });
       await tx.wait();
 
@@ -510,7 +527,9 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       if (!isSettledOnChain) {
         toast.success("Standing on-chain...", { duration: 2000 });
         const gasEstimate = await contract.stand.estimateGas(gameId).catch(() => 150000n);
-        const standTx = await contract.stand(gameId, { gasLimit: (gasEstimate * 130n) / 100n });
+        const standTx = await contract.stand(gameId, {
+          gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n
+        });
         await standTx.wait();
       } else {
         toast.success("Round already settled, syncing results...", { duration: 2000 });
@@ -566,7 +585,9 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
       if (!isSettledOnChain) {
         toast.success("Doubling down on-chain...", { duration: 2000 });
         const gasEstimate = await contract.doubleDown.estimateGas(gameId).catch(() => 150000n);
-        const tx = await contract.doubleDown(gameId, { gasLimit: (gasEstimate * 130n) / 100n });
+        const tx = await contract.doubleDown(gameId, {
+          gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n
+        });
         await tx.wait();
       } else {
         toast.success("Round already settled, syncing results...", { duration: 2000 });
@@ -617,7 +638,9 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
 
       toast.success("Splitting hands on-chain...", { duration: 2000 });
       const gasEstimate = await contract.split.estimateGas(gameId).catch(() => 150000n);
-      const tx = await contract.split(gameId, { gasLimit: (gasEstimate * 130n) / 100n });
+      const tx = await contract.split(gameId, {
+        gasLimit: gasEstimate > 250000n ? (gasEstimate * 150n) / 100n : 350000n
+      });
       await tx.wait();
 
       toast.success("Split successful!");
@@ -1006,7 +1029,11 @@ export const BlackjackWeb2 = ({ setBalance, setCurrentBet, setLastWin, authData,
               </>
             ) : (
               <>
-                {outcome === 'win' && "🏆 You Win!"}
+                {outcome === 'win' && (
+                  (playerHand.length === 2 && calculateScore(playerHand) === 21)
+                    ? "🃏 Blackjack!"
+                    : "🏆 You Win!"
+                )}
                 {outcome === 'push' && "🤝 Push / Tie"}
                 {outcome === 'loss' && "❌ Dealer Wins"}
               </>

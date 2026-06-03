@@ -124,7 +124,7 @@ async function startBlockchainWatcher() {
             const cards = playerDetails.cards;
             const score = Number(playerDetails.score);
             const busted = playerDetails.busted;
-            
+
             if (betAmount === 0n) continue; // No bet placed on this table
 
             // Calculate payout
@@ -172,7 +172,7 @@ async function startBlockchainWatcher() {
             const [users] = await pool.query('SELECT id FROM users WHERE wallet_address = ?', [playerAddress]);
             let userId;
             if (users.length === 0) {
-              const [result] = await pool.query('INSERT INTO users (wallet_address, password) VALUES (?, ?)', [playerAddress, 'web3_auth_placeholder']);
+              const [result] = await pool.query('INSERT INTO users (wallet_address) VALUES (?)', [playerAddress]);
               userId = result.insertId;
               await pool.query('INSERT INTO wallets (user_id, balance) VALUES (?, 0)', [userId]);
             } else {
@@ -182,7 +182,7 @@ async function startBlockchainWatcher() {
             // Save primary hand to game_history if not already saved to prevent duplicates
             const betFormatted = Number(ethers.formatUnits(betAmount, 18));
             const payoutFormatted = Number(ethers.formatUnits(payout, 18));
-            
+
             const [existing] = await pool.query(
               'SELECT id FROM game_history WHERE user_id = ? AND table_id = ? AND is_split = 0',
               [userId, tableId]
@@ -316,7 +316,66 @@ io.on('connection', (socket) => {
     broadcastTableState();
   });
 
-  socket.on('player-action', (data) => {
+  async function getActivePlayersOrdered(tableId) {
+    if (!tableId || Number(tableId) === 0) {
+      return Array.from(connectedPlayers.values());
+    }
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, fallbackProvider);
+    try {
+      const activePlayerAddresses = await contract.getActivePlayers(tableId);
+      return activePlayerAddresses.map(addr => {
+        const found = Array.from(connectedPlayers.values()).find(p => p.address.toLowerCase() === addr.toLowerCase());
+        if (found) return found;
+        return {
+          address: addr,
+          bet: 0,
+          cards: [],
+          score: 0,
+          status: 'Waiting Turn',
+          isSplit: false,
+          cardsRight: [],
+          scoreRight: 0
+        };
+      });
+    } catch (e) {
+      console.error("Failed to query active players from contract:", e.message);
+      return Array.from(connectedPlayers.values());
+    }
+  }
+
+  async function advanceTurn() {
+    const activePlayers = await getActivePlayersOrdered(activeTableId);
+    currentTurnIndex++;
+
+    // Skip players who are already stood, busted, finished, or got natural Blackjack (21 on 2 cards)
+    while (currentTurnIndex < activePlayers.length) {
+      const p = activePlayers[currentTurnIndex];
+      const hasNaturalBJ = p.score === 21 && p.cards.length === 2 && !p.isSplit;
+      const primaryDone = p.status === 'Stood' || p.status === 'Bust!' || p.status === 'Finished' || p.status === 'Blackjack' || hasNaturalBJ;
+      const splitDone = !p.isSplit || p.status === 'Finished' || p.status === 'Stood' || p.status === 'Blackjack';
+      
+      if (primaryDone && splitDone) {
+        if (hasNaturalBJ && p.status !== 'Blackjack') {
+          p.status = 'Blackjack';
+        }
+        currentTurnIndex++;
+      } else {
+        break;
+      }
+    }
+
+    if (currentTurnIndex < activePlayers.length) {
+      activePlayers.forEach((p, idx) => {
+        if (idx === currentTurnIndex) {
+          p.status = 'Playing';
+        }
+      });
+    } else {
+      tableState = 'dealer-turn';
+    }
+  }
+
+  socket.on('player-action', async (data) => {
     const player = connectedPlayers.get(socket.id);
     if (!player) return;
 
@@ -328,21 +387,43 @@ io.on('connection', (socket) => {
     } else if (data.action === 'start-round') {
       tableState = 'playing';
       currentTurnIndex = 0;
-      const activePlayers = Array.from(connectedPlayers.values());
-      activePlayers.forEach((p, idx) => {
-        if (idx === 0) {
-          p.status = 'Playing';
+      const activePlayers = await getActivePlayersOrdered(activeTableId);
+      
+      // Skip players who got natural Blackjack or are already stood/busted
+      while (currentTurnIndex < activePlayers.length) {
+        const p = activePlayers[currentTurnIndex];
+        const hasNaturalBJ = p.score === 21 && p.cards.length === 2 && !p.isSplit;
+        const primaryDone = p.status === 'Stood' || p.status === 'Bust!' || p.status === 'Finished' || p.status === 'Blackjack' || hasNaturalBJ;
+        const splitDone = !p.isSplit || p.status === 'Finished' || p.status === 'Stood' || p.status === 'Blackjack';
+        
+        if (primaryDone && splitDone) {
+          if (hasNaturalBJ && p.status !== 'Blackjack') {
+            p.status = 'Blackjack';
+          }
+          currentTurnIndex++;
         } else {
+          break;
+        }
+      }
+
+      activePlayers.forEach((p, idx) => {
+        if (idx === currentTurnIndex) {
+          p.status = 'Playing';
+        } else if (idx > currentTurnIndex) {
           p.status = 'Waiting Turn';
         }
       });
+
+      if (currentTurnIndex >= activePlayers.length) {
+        tableState = 'dealer-turn';
+      }
     } else if (data.action === 'hit') {
       player.cards = data.cards || [];
       player.score = data.score || 0;
       player.isSplit = data.isSplit || false;
       player.cardsRight = data.cardsRight || [];
       player.scoreRight = data.scoreRight || 0;
-      
+
       const activeIdx = Number(data.activeHandIndex || 0);
       if (player.isSplit && activeIdx === 0) {
         if (data.score > 21) {
@@ -353,7 +434,7 @@ io.on('connection', (socket) => {
       } else {
         if (data.score > 21) {
           player.status = 'Bust!';
-          advanceTurn();
+          await advanceTurn();
         } else {
           player.status = 'Playing';
         }
@@ -364,7 +445,7 @@ io.on('connection', (socket) => {
         player.status = 'Left Stood';
       } else {
         player.status = 'Stood';
-        advanceTurn();
+        await advanceTurn();
       }
     } else if (data.action === 'finished') {
       player.cards = data.cards || player.cards;
@@ -373,7 +454,7 @@ io.on('connection', (socket) => {
       player.cardsRight = data.cardsRight || [];
       player.scoreRight = data.scoreRight || 0;
       player.status = data.statusText || 'Finished';
-      advanceTurn();
+      await advanceTurn();
     } else if (data.action === 'dealer-sync') {
       tableDealerHand = data.dealerCards || [];
       if (data.status) {
@@ -385,8 +466,26 @@ io.on('connection', (socket) => {
       player.isSplit = data.isSplit || false;
       player.cardsRight = data.cardsRight || [];
       player.scoreRight = data.scoreRight || 0;
+
+      // If the player got natural blackjack (21 on 2 cards), they automatically stand.
+      const hasNaturalBJ = player.score === 21 && player.cards.length === 2 && !player.isSplit;
+      if (hasNaturalBJ) {
+        player.status = 'Blackjack';
+        
+        // Find if this player is the active player on the backend
+        const activePlayers = await getActivePlayersOrdered(activeTableId);
+        const activeIdx = activePlayers.findIndex(p => p.address && p.address.toLowerCase() === player.address.toLowerCase());
+        if (activeIdx === currentTurnIndex && tableState === 'playing') {
+          await advanceTurn();
+        }
+      }
     } else if (data.action === 'settle') {
-      player.status = data.outcome === 'win' ? '🏆 Winner!' : data.outcome === 'push' ? '🤝 Push' : '❌ Lost';
+      const hasNaturalBJ = player.score === 21 && player.cards && player.cards.length === 2 && !player.isSplit;
+      if (hasNaturalBJ && data.outcome === 'win') {
+        player.status = '🃏 Blackjack!';
+      } else {
+        player.status = data.outcome === 'win' ? '🏆 Winner!' : data.outcome === 'push' ? '🤝 Push' : '❌ Lost';
+      }
     } else if (data.action === 'reset') {
       player.bet = 0;
       player.cards = [];
@@ -407,12 +506,12 @@ io.on('connection', (socket) => {
     broadcastTableState();
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     if (connectedPlayers.has(socket.id)) {
       const address = connectedPlayers.get(socket.id).address;
       console.log(`Player ${address} disconnected on socket ${socket.id}`);
       connectedPlayers.delete(socket.id);
-      
+
       // If table becomes empty, reset state
       if (connectedPlayers.size === 0) {
         tableState = 'betting';
@@ -421,7 +520,7 @@ io.on('connection', (socket) => {
         activeTableId = 0; // Reset active table ID
       } else {
         // Recalculate turn if active player disconnected
-        const activePlayers = Array.from(connectedPlayers.values());
+        const activePlayers = await getActivePlayersOrdered(activeTableId);
         if (currentTurnIndex >= activePlayers.length) {
           tableState = 'dealer-turn';
         }
@@ -429,20 +528,6 @@ io.on('connection', (socket) => {
       broadcastTableState();
     }
   });
-
-  function advanceTurn() {
-    const activePlayers = Array.from(connectedPlayers.values());
-    currentTurnIndex++;
-    if (currentTurnIndex < activePlayers.length) {
-      activePlayers.forEach((p, idx) => {
-        if (idx === currentTurnIndex) {
-          p.status = 'Playing';
-        }
-      });
-    } else {
-      tableState = 'dealer-turn';
-    }
-  }
 
   function broadcastTableState() {
     const playersList = Array.from(connectedPlayers.values());

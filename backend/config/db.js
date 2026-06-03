@@ -39,8 +39,6 @@ export async function initDB() {
       CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
         wallet_address VARCHAR(255) UNIQUE,
-        username VARCHAR(255),
-        password VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);

@@ -259,9 +259,9 @@ function AppContent() {
   const isAdmin = address?.toLowerCase() === ADMIN_ADDRESS;
 
   return (
-    <div className="min-h-screen relative flex flex-col items-center overflow-x-hidden">
-      <div className="table-edge"></div>
-      <div className="table-leather"></div>
+    <div className={`min-h-screen relative flex flex-col items-center overflow-x-hidden w-full transition-colors duration-500 ${location.pathname === '/admin' ? 'bg-[#006241] bg-gradient-to-tr from-[#006241] via-[#006241] to-[#006241]' : ''}`}>
+      {location.pathname !== '/admin' && <div className="table-edge"></div>}
+      {location.pathname !== '/admin' && <div className="table-leather"></div>}
 
       <Toaster
         position="top-right"
@@ -319,7 +319,7 @@ function AppContent() {
                   </div>
                   <button onClick={handleLogout} className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors">Disconnect</button>
                 </div>
-                <button 
+                <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-inner border border-white/10 transition-all duration-300 hover:scale-105 active:scale-95 ${isAdmin ? 'bg-red-600/20 text-red-500 hover:bg-red-600/30' : 'bg-blue-600/20 text-blue-500 hover:bg-blue-600/30'} cursor-pointer`}
                 >
@@ -334,7 +334,7 @@ function AppContent() {
                 {/* Profile Menu Dropdown with separate Game History link */}
                 {showProfileMenu && (
                   <div className="absolute right-0 top-14 w-48 bg-slate-900/95 border border-white/10 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-3 duration-300 backdrop-blur-xl">
-                    <Link 
+                    <Link
                       to="/history"
                       className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 text-slate-300 hover:text-white transition-all text-xs font-black uppercase tracking-wider cursor-pointer"
                     >

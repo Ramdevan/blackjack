@@ -166,6 +166,9 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     tableStateRef.current = tableState;
   }, [tableState]);
 
+  const socketTurnIndexRef = useRef(-1);
+  const socketPlayersRef = useRef([]);
+
   // Initialize Socket.io Connection
   useEffect(() => {
     const socketUrl = `http://${window.location.hostname}:5000`;
@@ -177,9 +180,12 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     });
 
     newSocket.on('table-sync', (data) => {
-      if (data && data.players) {
-        setOtherPlayers(prevOthers => {
-          return data.players
+      if (data) {
+        socketTurnIndexRef.current = data.currentTurnIndex;
+        if (data.players) {
+          socketPlayersRef.current = data.players;
+          setOtherPlayers(prevOthers => {
+            return data.players
             .filter(p => p.address.toLowerCase() !== authData.address.toLowerCase())
             .map(p => {
               const existing = prevOthers.find(op => op.address.toLowerCase() === p.address.toLowerCase());
@@ -245,7 +251,8 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           localStorage.removeItem('bj_active_game_id');
         }
       }
-    });
+    }
+  });
 
     return () => {
       newSocket.disconnect();
@@ -335,14 +342,17 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         if (contract) {
           try {
             let initialTableInfo = await contract.tables(gameId);
+            let checkRetries = 0;
             // If backend is in dealer-turn state but RPC is lagging and still registers Playing, wait for catch-up
-            if (Number(initialTableInfo.state) === 1) {
+            while (Number(initialTableInfo.state) === 1 && checkRetries < 5) {
+              console.log(`On-chain table is still in Playing state. Retrying in 1000ms (attempt ${checkRetries + 1}/5)...`);
               await new Promise(resolve => setTimeout(resolve, 1000));
               initialTableInfo = await contract.tables(gameId);
-              if (Number(initialTableInfo.state) === 1) {
-                console.log("On-chain table is still in Playing state. Skipping dealer turn automation.");
-                return;
-              }
+              checkRetries++;
+            }
+            if (Number(initialTableInfo.state) === 1) {
+              console.warn("On-chain table is still in Playing state after 5 attempts. Skipping dealer turn automation.");
+              return;
             }
             if (Number(initialTableInfo.state) === 2) {
               toast.success("All players finished! Settling table on-chain...", { duration: 3000 });
@@ -521,9 +531,22 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     try {
       let tableInfo = await activeContract.tables(activeId);
       let onChainDealerCards = await activeContract.getDealerCards(activeId);
+      let playerDetails = await activeContract.getPlayerBetDetails(activeId, authData.address);
       
       const currentTableState = tableStateRef.current || tableState;
       const expectSettled = forceRevealDealer || currentTableState === 'settled' || currentTableState === 'dealer-turn';
+      const isRoundActive = Number(tableInfo.state) === 1 || currentTableState === 'playing' || expectSettled;
+
+      // Robust stale RPC check & retry loop for initial dealt cards (minimum 2 cards each for player and dealer)
+      let initialSyncRetries = 0;
+      while (isRoundActive && (onChainDealerCards.length < 2 || playerDetails.cards.length < 2) && initialSyncRetries < 5) {
+        console.warn(`[syncCardsFromChain] Stale cards detected (Dealer: ${onChainDealerCards.length}, Player: ${playerDetails.cards.length}). Retrying in 1000ms...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        tableInfo = await activeContract.tables(activeId);
+        onChainDealerCards = await activeContract.getDealerCards(activeId);
+        playerDetails = await activeContract.getPlayerBetDetails(activeId, authData.address);
+        initialSyncRetries++;
+      }
 
       // We only consider the settlement fully synchronized if the second dealer card is non-zero
       let isSettled = Number(tableInfo.state) >= 2 && onChainDealerCards.length >= 2 && Number(onChainDealerCards[1]) > 0;
@@ -556,10 +579,13 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       setSharedDealerCards(formattedDealerCards);
 
       // Fetch on-chain turn index and active players
-      const currentTurnIndex = Number(tableInfo.currentTurnIndex);
+      const onChainTurnIndex = Number(tableInfo.currentTurnIndex);
+      const finalTurnIndex = (socketTurnIndexRef.current !== undefined && socketTurnIndexRef.current >= 0)
+        ? Math.max(onChainTurnIndex, socketTurnIndexRef.current)
+        : onChainTurnIndex;
       const activePlayers = await activeContract.getActivePlayers(activeId);
-      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length) 
-        ? activePlayers[currentTurnIndex] 
+      const activePlayerAddress = (activePlayers && finalTurnIndex < activePlayers.length) 
+        ? activePlayers[finalTurnIndex] 
         : null;
       
       const myTurn = activePlayerAddress && activePlayerAddress.toLowerCase() === authData.address.toLowerCase();
@@ -577,7 +603,6 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       }
 
       // Sync active player's cards
-      const playerDetails = await activeContract.getPlayerBetDetails(activeId, authData.address);
       let onChainIsSplit = false;
       let activeHandIndex = 0;
       let formattedLeft = [];
@@ -714,22 +739,31 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 : details.cards.map(c => formatCard(Number(c)));
               const score = Number(details.score);
               
-              // On-chain status determination
+              // On-chain status determination with socket status fallback to handle RPC replica lag
               let statusText = 'Waiting Turn';
+              const socketPlayer = (socketPlayersRef.current || []).find(sp => sp.address.toLowerCase() === p.address.toLowerCase());
+              const socketStatus = socketPlayer ? socketPlayer.status : p.status;
+              
+              const isStood = details.stood || socketStatus === 'Stood' || socketStatus === 'Left Stood' || socketStatus === 'Stood Primary';
+              const isBusted = details.busted || socketStatus === 'Bust!' || socketStatus === 'Left Busted' || socketStatus === 'Bust Primary!';
+              const isSettledStatus = details.settled || socketStatus === 'Settled' || socketStatus === 'Finished' || socketStatus === 'Blackjack';
+
               const isActivePlayer = activePlayerAddress && activePlayerAddress.toLowerCase() === p.address.toLowerCase();
-              if (isActivePlayer && !isSettled) {
+
+              if (isSettledStatus) {
+                statusText = socketStatus === 'Blackjack' ? 'Blackjack' : 'Settled';
+              } else if (isBusted) {
+                statusText = otherIsSplit ? 'Bust Primary!' : 'Bust!';
+              } else if (isStood) {
+                statusText = otherIsSplit ? 'Stood Primary' : 'Stood';
+              } else if (isActivePlayer && !isSettled) {
                 if (otherIsSplit) {
                   statusText = otherActiveHandIndex === 0 ? 'Playing Left' : 'Playing Right';
                 } else {
                   statusText = 'Playing';
                 }
-              }
-              if (details.busted) {
-                statusText = otherIsSplit ? 'Bust Primary!' : 'Bust!';
-              } else if (details.stood) {
-                statusText = otherIsSplit ? 'Stood Primary' : 'Stood';
-              } else if (details.settled) {
-                statusText = 'Settled';
+              } else if (socketStatus) {
+                statusText = socketStatus;
               }
 
               return {

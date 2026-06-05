@@ -8,10 +8,11 @@ import Dashboard from './admin/Dashboard';
 import PlayerList from './admin/PlayerList';
 import ChipRate from './admin/ChipRate';
 import OnChainFunds from './admin/OnChainFunds';
+import PlatformFee from './admin/PlatformFee';
 
 const AdminPanel = ({ address, adminAuthData, connectWallet, isConnecting, handleLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [stats, setStats] = useState({ totalUsers: 0, totalBets: 0, houseProfit: 0 });
+  const [stats, setStats] = useState({ totalUsers: 0, totalBets: 0, houseProfit: 0, totalFees: 0 });
   const [settings, setSettings] = useState({ token_price: '1000' });
   const [users, setUsers] = useState([]);
   const [history, setHistory] = useState([]);
@@ -355,6 +356,18 @@ const AdminPanel = ({ address, adminAuthData, connectWallet, isConnecting, handl
             <span className="text-base">💸</span>
             On-Chain Funds
           </button>
+          
+          <button
+            onClick={() => setActiveTab('platform_fee')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all text-left ${
+              activeTab === 'platform_fee'
+                ? 'bg-red-600 text-white shadow-xl shadow-red-600/10'
+                : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <span className="text-base">🎟️</span>
+            Platform Fee
+          </button>
         </div>
 
         {/* Right Side Content Panel */}
@@ -390,6 +403,10 @@ const AdminPanel = ({ address, adminAuthData, connectWallet, isConnecting, handl
               TOKEN_ADDRESS={TOKEN_ADDRESS}
               address={address}
             />
+          )}
+
+          {activeTab === 'platform_fee' && (
+            <PlatformFee address={address} />
           )}
         </div>
       </div>

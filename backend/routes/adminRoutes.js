@@ -50,8 +50,9 @@ router.get('/stats', verifyAdmin, async (req, res) => {
     const [[{ totalUsers }]] = await pool.query('SELECT COUNT(*) as totalUsers FROM users');
     const [[{ totalBets }]] = await pool.query('SELECT SUM(bet_amount) as totalBets FROM game_history');
     const [[{ houseProfit }]] = await pool.query('SELECT SUM(bet_amount - payout) as houseProfit FROM game_history');
+    const [[{ totalFees }]] = await pool.query('SELECT SUM(fee_amount) as totalFees FROM game_history');
     
-    res.json({ totalUsers, totalBets: totalBets || 0, houseProfit: houseProfit || 0 });
+    res.json({ totalUsers, totalBets: totalBets || 0, houseProfit: houseProfit || 0, totalFees: totalFees || 0 });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

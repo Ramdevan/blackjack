@@ -50,12 +50,13 @@ async function loadPersistentMultiplayerTables() {
 }
 
 // --- Blockchain Watcher Configuration ---
-const CONTRACT_ADDRESS = "0x0A9d1704ff312F90F745996C2f35eb2dFfcf69d4";
+const CONTRACT_ADDRESS = "0x02ec22885eF591C954491624E1F2Fa7F24e8618B";
 const ABI = [
   "event TableSettled(uint256 indexed tableId, uint8[] dealerCards, uint8 dealerScore)",
   "function getActivePlayers(uint256 tableId) view returns (address[] memory)",
   "function getPlayerBetDetails(uint256 tableId, address player) view returns (address playerAddress, uint256 betAmount, uint8[] memory cards, uint8 score, bool stood, bool busted, bool settled, bool doubledDown)",
-  "function getPlayerSplitDetails(uint256 tableId, address player) view returns (bool isSplit, uint8[] memory splitCards, uint8 splitScore, bool splitStood, bool splitBusted, uint256 splitBetAmount, uint8 activeHandIndex)"
+  "function getPlayerSplitDetails(uint256 tableId, address player) view returns (bool isSplit, uint8[] memory splitCards, uint8 splitScore, bool splitStood, bool splitBusted, uint256 splitBetAmount, uint8 activeHandIndex)",
+  "function platformFeeBps() view returns (uint256)"
 ];
 
 async function startBlockchainWatcher() {
@@ -79,6 +80,14 @@ async function startBlockchainWatcher() {
   setInterval(async () => {
     try {
       const currentBlock = await provider.getBlockNumber();
+
+      // Fetch active platform fee bps from the contract dynamically
+      let platformFeeBps = 0n;
+      try {
+        platformFeeBps = await contract.platformFeeBps();
+      } catch (feeErr) {
+        console.warn("[Watcher] Failed to fetch platformFeeBps, defaulting to 0:", feeErr.message);
+      }
 
       // If we haven't successfully initialized the starting block, do it now
       if (lastCheckedBlock === null) {
@@ -163,10 +172,16 @@ async function startBlockchainWatcher() {
               }
             }
 
+            let fee = 0n;
+            if (resultType === 'win' && platformFeeBps > 0n) {
+              fee = (payout * platformFeeBps) / 10000n;
+              payout = payout - fee;
+            }
+
             const isMultiplayer = multiplayerTableIds.has(Number(tableId)) || players.length > 1;
             const mode = isMultiplayer ? 'multiplayer' : 'single';
 
-            console.log(`[SYNC-PLAYER] Table ${tableId} Player ${playerAddress}: Bet ${betAmount}, Payout ${payout}, Result: ${resultType}, Mode: ${mode}`);
+            console.log(`[SYNC-PLAYER] Table ${tableId} Player ${playerAddress}: Bet ${betAmount}, Payout ${payout}, Fee ${fee}, Result: ${resultType}, Mode: ${mode}`);
 
             // Find or create user
             const [users] = await pool.query('SELECT id FROM users WHERE wallet_address = ?', [playerAddress]);
@@ -182,6 +197,7 @@ async function startBlockchainWatcher() {
             // Save primary hand to game_history if not already saved to prevent duplicates
             const betFormatted = Number(ethers.formatUnits(betAmount, 18));
             const payoutFormatted = Number(ethers.formatUnits(payout, 18));
+            const feeFormatted = Number(ethers.formatUnits(fee, 18));
 
             const [existing] = await pool.query(
               'SELECT id FROM game_history WHERE user_id = ? AND table_id = ? AND is_split = 0',
@@ -190,8 +206,8 @@ async function startBlockchainWatcher() {
 
             if (existing.length === 0) {
               await pool.query(
-                'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, result, game_mode) VALUES (?, ?, 0, ?, ?, ?, ?)',
-                [userId, tableId, betFormatted, payoutFormatted, resultType, mode]
+                'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, fee_amount, result, game_mode) VALUES (?, ?, 0, ?, ?, ?, ?, ?)',
+                [userId, tableId, betFormatted, payoutFormatted, feeFormatted, resultType, mode]
               );
             }
 
@@ -225,8 +241,15 @@ async function startBlockchainWatcher() {
                   }
                 }
 
+                let splitFee = 0n;
+                if (splitResult === 'win' && platformFeeBps > 0n) {
+                  splitFee = (splitPayout * platformFeeBps) / 10000n;
+                  splitPayout = splitPayout - splitFee;
+                }
+
                 const splitBetFormatted = Number(ethers.formatUnits(splitBet, 18));
                 const splitPayoutFormatted = Number(ethers.formatUnits(splitPayout, 18));
+                const splitFeeFormatted = Number(ethers.formatUnits(splitFee, 18));
 
                 const [existingSplit] = await pool.query(
                   'SELECT id FROM game_history WHERE user_id = ? AND table_id = ? AND is_split = 1',
@@ -235,10 +258,10 @@ async function startBlockchainWatcher() {
 
                 if (existingSplit.length === 0) {
                   await pool.query(
-                    'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, result, game_mode) VALUES (?, ?, 1, ?, ?, ?, ?)',
-                    [userId, tableId, splitBetFormatted, splitPayoutFormatted, splitResult, mode]
+                    'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, fee_amount, result, game_mode) VALUES (?, ?, 1, ?, ?, ?, ?, ?)',
+                    [userId, tableId, splitBetFormatted, splitPayoutFormatted, splitFeeFormatted, splitResult, mode]
                   );
-                  console.log(`[SYNC-SPLIT] Table ${tableId} Player ${playerAddress}: Bet ${splitBetFormatted}, Payout ${splitPayoutFormatted}, Result: ${splitResult}, Mode: ${mode}`);
+                  console.log(`[SYNC-SPLIT] Table ${tableId} Player ${playerAddress}: Bet ${splitBetFormatted}, Payout ${splitPayoutFormatted}, Fee ${splitFeeFormatted}, Result: ${splitResult}, Mode: ${mode}`);
                 }
               }
             } catch (splitErr) {

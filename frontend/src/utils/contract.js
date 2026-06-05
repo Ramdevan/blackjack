@@ -38,7 +38,9 @@ export const blackjackABI = [
   "event PlayerAction(uint256 indexed tableId, address indexed player, string action, uint8[] cards, uint8 score)",
   "event TableSettled(uint256 indexed tableId, uint8[] dealerCards, uint8 dealerScore)",
   "event TimeoutTriggered(uint256 indexed tableId, address indexed timedOutPlayer, address indexed triggerer)",
-  "function withdrawTokens(address token, uint256 amount) external"
+  "function withdrawTokens(address token, uint256 amount) external",
+  "function platformFeeBps() view returns (uint256)",
+  "function setPlatformFee(uint256 _feeBps) external"
 ];
 
 // Standard ERC20 ABI
@@ -53,7 +55,7 @@ export const tokenABI = [
 ];
 
 // BSC Testnet Addresses
-export const CONTRACT_ADDRESS = "0x0A9d1704ff312F90F745996C2f35eb2dFfcf69d4";
+export const CONTRACT_ADDRESS = "0x02ec22885eF591C954491624E1F2Fa7F24e8618B";
 export const TOKEN_ADDRESS = "0x5BB373697cee7Ea0fB183E97913e543f2efD335e"; // Game Chips (TKN)
 export const USDT_ADDRESS = "0xA421Da1F4630C22C687F7bdA97e97776218CE89d"; // BSC Testnet USDT
 

@@ -25,6 +25,7 @@ contract BlackJackCard {
     uint256 public minBet = 10 * 10**18; // Default minimum bet (e.g. 10 CHIPS)
     uint256 public maxBet = 1000 * 10**18; // Default maximum bet (e.g. 1000 CHIPS)
     uint256 public turnTimeoutDuration = 60; // In seconds (default: 60 seconds per turn)
+    uint256 public platformFeeBps = 100; // Platform fee in basis points (default: 100 = 1%)
 
     enum TableState { Betting, Playing, Settling, Finished }
 
@@ -85,6 +86,7 @@ contract BlackJackCard {
     event TableSettled(uint256 indexed tableId, uint8[] dealerCards, uint8 dealerScore);
     event TimeoutTriggered(uint256 indexed tableId, address indexed timedOutPlayer, address indexed triggerer);
     event RulesUpdated(uint256 minBet, uint256 maxBet, uint256 turnTimeoutDuration);
+    event PlatformFeeUpdated(uint256 newFeeBps);
     event TokensWithdrawn(address token, uint256 amount);
 
     constructor(address _chipToken) {
@@ -527,6 +529,14 @@ contract BlackJackCard {
                 }
             }
 
+            // Deduct platform fee from total payout if it is a winning hand (payout > totalBetAmount)
+            uint256 totalBet = pb.betAmount + (pb.isSplit ? pb.splitBetAmount : 0);
+            uint256 fee = 0;
+            if (payout > totalBet && platformFeeBps > 0) {
+                fee = (payout * platformFeeBps) / 10000;
+                payout -= fee;
+            }
+
             pb.settled = true;
             if (payout > 0) {
                 require(chipToken.transfer(player, payout), "Payout transfer failed");
@@ -659,6 +669,15 @@ contract BlackJackCard {
         maxBet = _maxBet;
         turnTimeoutDuration = _turnTimeoutDuration;
         emit RulesUpdated(_minBet, _maxBet, _turnTimeoutDuration);
+    }
+
+    /**
+     * @dev Set platform fee in basis points (100 = 1%). Maximum cap is 1000 (10%).
+     */
+    function setPlatformFee(uint256 _feeBps) external onlyOwner {
+        require(_feeBps <= 1000, "Fee cannot exceed 10%");
+        platformFeeBps = _feeBps;
+        emit PlatformFeeUpdated(_feeBps);
     }
 
     /**

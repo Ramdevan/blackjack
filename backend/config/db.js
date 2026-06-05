@@ -62,6 +62,7 @@ export async function initDB() {
         is_split TINYINT DEFAULT 0,
         bet_amount DECIMAL(15,2) NOT NULL,
         payout DECIMAL(15,2) NOT NULL,
+        fee_amount DECIMAL(15,2) DEFAULT 0.00,
         result VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -81,6 +82,21 @@ export async function initDB() {
       }
     } catch (colErr) {
       console.error('Error adding game_mode column:', colErr);
+    }
+
+    // Add fee_amount column if it does not exist
+    try {
+      const [columns] = await pool.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'game_history' AND COLUMN_NAME = 'fee_amount'
+      `, [dbName]);
+      if (columns.length === 0) {
+        await pool.query("ALTER TABLE game_history ADD COLUMN fee_amount DECIMAL(15,2) DEFAULT 0.00;");
+        console.log('Database: Added fee_amount column to game_history table');
+      }
+    } catch (colErr) {
+      console.error('Error adding fee_amount column:', colErr);
     }
 
     // Create settings table

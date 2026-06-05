@@ -35,10 +35,11 @@ const Dashboard = ({ stats, history }) => {
   return (
     <div className="animate-in fade-in duration-300 flex flex-col gap-6">
       {/* Main Dashboard Stats cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-2">
         <StatCard title="Total Players" value={stats.totalUsers} icon="👥" color="from-blue-600 to-indigo-700" />
         <StatCard title="Total Volume" value={`${Number(stats.totalBets).toLocaleString()} Chips`} icon="💰" color="from-emerald-600 to-teal-700" />
         <StatCard title="House Profit" value={`${Number(stats.houseProfit).toLocaleString()} Chips`} icon="🏛️" color="from-orange-600 to-red-700" />
+        <StatCard title="Platform Fees" value={`${Number(stats.totalFees || 0).toLocaleString()} Chips`} icon="🎟️" color="from-violet-600 to-fuchsia-700" />
       </div>
 
       {/* Recent History / Live Activity spanning wide */}

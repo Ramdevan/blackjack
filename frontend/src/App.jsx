@@ -7,7 +7,7 @@ import { BlackjackMultiplayer } from './components/BlackjackMultiplayer';
 import AdminPanel from './components/AdminPanel';
 import Deposit from './components/Deposit';
 import PlayerHistoryPage from './components/PlayerHistoryPage';
-import { getTokenContract } from './utils/contract';
+import { getTokenContract, CONTRACT_ADDRESS } from './utils/contract';
 
 // Helper component to access navigation inside BrowserRouter
 function AppContent() {
@@ -20,6 +20,7 @@ function AppContent() {
   const [gameMode, setGameMode] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [authData, setAuthData] = useState(null);
+  const [dealerBalance, setDealerBalance] = useState(null);
 
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -55,6 +56,9 @@ function AppContent() {
   };
 
   useEffect(() => {
+    fetchDealerBalance();
+    const interval = setInterval(fetchDealerBalance, 15000);
+
     const savedAuth = sessionStorage.getItem('web3_auth');
     if (savedAuth) {
       const parsed = JSON.parse(savedAuth);
@@ -75,6 +79,8 @@ function AppContent() {
     if (savedMode) {
       setGameMode(savedMode);
     }
+
+    return () => clearInterval(interval);
   }, []);
 
   // Listen to MetaMask account and chain changes dynamically to prevent stale state reverts
@@ -134,6 +140,24 @@ function AppContent() {
       setBalance(ethers.formatUnits(bal, decimals));
     } catch (err) {
       console.error("Error fetching balance:", err);
+    }
+  };
+
+  const fetchDealerBalance = async () => {
+    try {
+      let provider;
+      if (window.ethereum) {
+        provider = new ethers.BrowserProvider(window.ethereum);
+      } else {
+        provider = new ethers.JsonRpcProvider('https://bsc-testnet-rpc.publicnode.com');
+      }
+      const tokenContract = getTokenContract(provider);
+      const bal = await tokenContract.balanceOf(CONTRACT_ADDRESS);
+      const decimals = await tokenContract.decimals();
+      const formatted = Number(ethers.formatUnits(bal, decimals));
+      setDealerBalance(formatted);
+    } catch (err) {
+      console.error("Error fetching dealer balance:", err);
     }
   };
 
@@ -373,25 +397,38 @@ function AppContent() {
                   </button>
                 </div>
               ) : !gameMode ? (
-                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
-                  <h2 className="text-5xl font-black text-white mb-12 tracking-tight">Select Table</h2>
-                  <div className="flex gap-8">
-                    <ModeCard
-                      title="Single Player"
-                      desc="Private table. Fast rounds."
-                      icon="🃏"
-                      onClick={() => changeGameMode('single')}
-                      color="from-blue-600 to-indigo-700"
-                    />
-                    <ModeCard
-                      title="Multiplayer"
-                      desc="Shared table. Play with others."
-                      icon="👥"
-                      onClick={() => changeGameMode('multiplayer')}
-                      color="from-purple-600 to-pink-700"
-                    />
+                dealerBalance !== null && dealerBalance < 500 ? (
+                  <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500 max-w-md bg-black/60 backdrop-blur-xl p-12 rounded-[40px] border border-red-500/20 shadow-2xl">
+                    <div className="w-24 h-24 bg-gradient-to-br from-red-500 to-amber-600 rounded-3xl flex items-center justify-center text-5xl mb-8 shadow-xl shadow-red-500/20">⚠️</div>
+                    <h2 className="text-3xl font-black text-white mb-4 text-center">Under Maintenance</h2>
+                    <p className="text-slate-400 text-center mb-6 leading-relaxed">
+                      The dealer contract is currently running low on reserve chips. Games are temporarily suspended until the administrator refills the contract.
+                    </p>
+                    <div className="text-[10px] text-red-400 font-black uppercase tracking-widest bg-red-500/10 px-4 py-2 rounded-full border border-red-500/20">
+                      Dealer Balance: {dealerBalance.toLocaleString()} / 500 Chips
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
+                    <h2 className="text-5xl font-black text-white mb-12 tracking-tight">Select Table</h2>
+                    <div className="flex gap-8">
+                      <ModeCard
+                        title="Single Player"
+                        desc="Private table. Fast rounds."
+                        icon="🃏"
+                        onClick={() => changeGameMode('single')}
+                        color="from-blue-600 to-indigo-700"
+                      />
+                      <ModeCard
+                        title="Multiplayer"
+                        desc="Shared table. Play with others."
+                        icon="👥"
+                        onClick={() => changeGameMode('multiplayer')}
+                        color="from-purple-600 to-pink-700"
+                      />
+                    </div>
+                  </div>
+                )
               ) : (
                 <div className="w-full relative">
                   <button

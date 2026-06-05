@@ -26,6 +26,7 @@ contract BlackJackCard {
     uint256 public maxBet = 1000 * 10**18; // Default maximum bet (e.g. 1000 CHIPS)
     uint256 public turnTimeoutDuration = 60; // In seconds (default: 60 seconds per turn)
     uint256 public platformFeeBps = 100; // Platform fee in basis points (default: 100 = 1%)
+    uint256 public totalActiveBets; // Sum of all active player bets on all tables
 
     enum TableState { Betting, Playing, Settling, Finished }
 
@@ -118,6 +119,12 @@ contract BlackJackCard {
         require(betAmount <= maxBet, "Bet amount exceeds maximum limit");
         require(t.bets[msg.sender].betAmount == 0, "Already placed a bet on this table");
 
+        // Ensure dealer contract has enough chip reserves to cover this bet
+        // (Reserves = Balance - Active Bets). Minimum reserve required is 3x betAmount (allows split + double downs).
+        uint256 currentBalance = chipToken.balanceOf(address(this));
+        uint256 netReserves = currentBalance > totalActiveBets ? currentBalance - totalActiveBets : 0;
+        require(netReserves >= betAmount * 3, "Insufficient dealer reserves to cover this bet");
+
         // Transfer chips to contract
         require(chipToken.transferFrom(msg.sender, address(this), betAmount), "Token transfer failed");
 
@@ -140,6 +147,7 @@ contract BlackJackCard {
             activeHandIndex: 0
         });
 
+        totalActiveBets += betAmount;
         t.lastActionTimestamp = block.timestamp;
         emit BetPlaced(tableId, msg.sender, betAmount);
     }
@@ -151,6 +159,7 @@ contract BlackJackCard {
         Table storage t = tables[tableId];
         require(t.state == TableState.Betting, "Round cannot be started (Not in betting phase)");
         require(t.activePlayers.length > 0, "No players seated at this table");
+        require(chipToken.balanceOf(address(this)) >= 500 * 10**18, "Dealer balance too low to start game");
 
         t.state = TableState.Playing;
         t.currentTurnIndex = 0;
@@ -278,9 +287,15 @@ contract BlackJackCard {
                 uint256 additionalBet = pb.betAmount;
                 require(pb.betAmount * 2 <= maxBet, "Doubled bet exceeds max bet limit");
 
+                // Ensure dealer contract has enough chip reserves to cover the doubled bet
+                uint256 currentBalance = chipToken.balanceOf(address(this));
+                uint256 netReserves = currentBalance > totalActiveBets ? currentBalance - totalActiveBets : 0;
+                require(netReserves >= additionalBet * 3, "Insufficient dealer reserves to double down");
+
                 require(chipToken.transferFrom(msg.sender, address(this), additionalBet), "Token transfer failed");
                 pb.betAmount += additionalBet;
                 pb.doubledDown = true;
+                totalActiveBets += additionalBet;
 
                 pb.cards.push(newCard);
                 pb.score = calculateScore(pb.cards);
@@ -299,8 +314,14 @@ contract BlackJackCard {
                 uint256 additionalBet = pb.splitBetAmount;
                 require(pb.splitBetAmount * 2 <= maxBet, "Doubled bet exceeds max bet limit");
 
+                // Ensure dealer contract has enough chip reserves to cover the doubled bet
+                uint256 currentBalance = chipToken.balanceOf(address(this));
+                uint256 netReserves = currentBalance > totalActiveBets ? currentBalance - totalActiveBets : 0;
+                require(netReserves >= additionalBet * 3, "Insufficient dealer reserves to double down");
+
                 require(chipToken.transferFrom(msg.sender, address(this), additionalBet), "Token transfer failed");
                 pb.splitBetAmount += additionalBet;
+                totalActiveBets += additionalBet;
 
                 pb.splitCards.push(newCard);
                 pb.splitScore = calculateScore(pb.splitCards);
@@ -320,9 +341,15 @@ contract BlackJackCard {
             uint256 additionalBet = pb.betAmount;
             require(pb.betAmount * 2 <= maxBet, "Doubled bet exceeds max bet limit");
 
+            // Ensure dealer contract has enough chip reserves to cover the doubled bet
+            uint256 currentBalance = chipToken.balanceOf(address(this));
+            uint256 netReserves = currentBalance > totalActiveBets ? currentBalance - totalActiveBets : 0;
+            require(netReserves >= additionalBet * 3, "Insufficient dealer reserves to double down");
+
             require(chipToken.transferFrom(msg.sender, address(this), additionalBet), "Token transfer failed");
             pb.betAmount += additionalBet;
             pb.doubledDown = true;
+            totalActiveBets += additionalBet;
 
             pb.cards.push(newCard);
             pb.score = calculateScore(pb.cards);
@@ -390,12 +417,18 @@ contract BlackJackCard {
         uint256 additionalBet = pb.betAmount;
         require(pb.betAmount * 2 <= maxBet, "Split bet exceeds max bet limit");
 
+        // Ensure dealer contract has enough chip reserves to cover the split bet
+        uint256 currentBalance = chipToken.balanceOf(address(this));
+        uint256 netReserves = currentBalance > totalActiveBets ? currentBalance - totalActiveBets : 0;
+        require(netReserves >= additionalBet * 3, "Insufficient dealer reserves to split");
+
         // Pull additional matching bet amount for the split hand
         require(chipToken.transferFrom(msg.sender, address(this), additionalBet), "Token transfer failed");
        
         pb.isSplit = true;
         pb.splitBetAmount = additionalBet;
         pb.activeHandIndex = 0;
+        totalActiveBets += additionalBet;
        
         // Move the second card to the split hand
         uint8 secondCard = pb.cards[1];
@@ -535,6 +568,12 @@ contract BlackJackCard {
             if (payout > totalBet && platformFeeBps > 0) {
                 fee = (payout * platformFeeBps) / 10000;
                 payout -= fee;
+            }
+
+            if (totalActiveBets >= totalBet) {
+                totalActiveBets -= totalBet;
+            } else {
+                totalActiveBets = 0;
             }
 
             pb.settled = true;
@@ -695,5 +734,13 @@ contract BlackJackCard {
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "New owner is zero address");
         owner = newOwner;
+    }
+
+    /**
+     * @dev Change the chip token address.
+     */
+    function chiptokenaddresschnage(address newAddress) external onlyOwner {
+        require(newAddress != address(0), "Invalid token address");
+        chipToken = IERC20(newAddress);
     }
 }

@@ -50,7 +50,7 @@ async function loadPersistentMultiplayerTables() {
 }
 
 // --- Blockchain Watcher Configuration ---
-const CONTRACT_ADDRESS = "0x02ec22885eF591C954491624E1F2Fa7F24e8618B";
+const CONTRACT_ADDRESS = "0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5";
 const ABI = [
   "event TableSettled(uint256 indexed tableId, uint8[] dealerCards, uint8 dealerScore)",
   "function getActivePlayers(uint256 tableId) view returns (address[] memory)",

@@ -200,14 +200,14 @@ async function startBlockchainWatcher() {
             const feeFormatted = Number(ethers.formatUnits(fee, 18));
 
             const [existing] = await pool.query(
-              'SELECT id FROM game_history WHERE user_id = ? AND table_id = ? AND is_split = 0',
-              [userId, tableId]
+              'SELECT id FROM game_history WHERE user_id = ? AND table_id = ? AND is_split = 0 AND contract_address = ?',
+              [userId, tableId, CONTRACT_ADDRESS]
             );
 
             if (existing.length === 0) {
               await pool.query(
-                'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, fee_amount, result, game_mode) VALUES (?, ?, 0, ?, ?, ?, ?, ?)',
-                [userId, tableId, betFormatted, payoutFormatted, feeFormatted, resultType, mode]
+                'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, fee_amount, result, game_mode, contract_address) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)',
+                [userId, tableId, betFormatted, payoutFormatted, feeFormatted, resultType, mode, CONTRACT_ADDRESS]
               );
             }
 
@@ -252,14 +252,14 @@ async function startBlockchainWatcher() {
                 const splitFeeFormatted = Number(ethers.formatUnits(splitFee, 18));
 
                 const [existingSplit] = await pool.query(
-                  'SELECT id FROM game_history WHERE user_id = ? AND table_id = ? AND is_split = 1',
-                  [userId, tableId]
+                  'SELECT id FROM game_history WHERE user_id = ? AND table_id = ? AND is_split = 1 AND contract_address = ?',
+                  [userId, tableId, CONTRACT_ADDRESS]
                 );
 
                 if (existingSplit.length === 0) {
                   await pool.query(
-                    'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, fee_amount, result, game_mode) VALUES (?, ?, 1, ?, ?, ?, ?, ?)',
-                    [userId, tableId, splitBetFormatted, splitPayoutFormatted, splitFeeFormatted, splitResult, mode]
+                    'INSERT INTO game_history (user_id, table_id, is_split, bet_amount, payout, fee_amount, result, game_mode, contract_address) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)',
+                    [userId, tableId, splitBetFormatted, splitPayoutFormatted, splitFeeFormatted, splitResult, mode, CONTRACT_ADDRESS]
                   );
                   console.log(`[SYNC-SPLIT] Table ${tableId} Player ${playerAddress}: Bet ${splitBetFormatted}, Payout ${splitPayoutFormatted}, Fee ${splitFeeFormatted}, Result: ${splitResult}, Mode: ${mode}`);
                 }

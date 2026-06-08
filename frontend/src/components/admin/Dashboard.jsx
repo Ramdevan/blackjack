@@ -102,7 +102,7 @@ const Dashboard = ({ stats, history }) => {
                     </td>
 
                     {/* Time */}
-                    <td className="py-3 text-right text-[10px] text-slate-600 font-medium pr-3">
+                    <td className="py-3 text-right text-[10px] text-white font-medium pr-3">
                       {new Date(h.created_at).toLocaleTimeString()}
                     </td>
                   </tr>

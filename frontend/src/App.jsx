@@ -126,6 +126,52 @@ function AppContent() {
     }
   }, []);
 
+  // Inactivity timeout checking
+  const refreshActivity = () => {
+    sessionStorage.setItem('bj_last_activity', Date.now().toString());
+  };
+
+  useEffect(() => {
+    if (!address && !adminAddress) return;
+
+    // Initialize activity timestamp
+    refreshActivity();
+
+    // Listen to user interaction events to refresh activity timer
+    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    const handleUserActivity = () => {
+      refreshActivity();
+    };
+
+    activityEvents.forEach(event => {
+      window.addEventListener(event, handleUserActivity);
+    });
+
+    const checkInactivity = () => {
+      const lastActivity = parseInt(sessionStorage.getItem('bj_last_activity') || '0');
+      const timeoutLimit = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
+
+      if (lastActivity && Date.now() - lastActivity > timeoutLimit) {
+        if (address) {
+          handleLogout(true);
+        }
+        if (adminAddress) {
+          handleAdminLogout(true);
+        }
+      }
+    };
+
+    // Check inactivity every 60 seconds
+    const interval = setInterval(checkInactivity, 60000);
+
+    return () => {
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, handleUserActivity);
+      });
+      clearInterval(interval);
+    };
+  }, [address, adminAddress]);
+
   useEffect(() => {
     setShowProfileMenu(false);
   }, [location.pathname]);
@@ -255,20 +301,28 @@ function AppContent() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = (isAuto = false) => {
     sessionStorage.removeItem('web3_auth');
     setAddress(null);
     setAuthData(null);
     changeGameMode(null);
-    toast.success("User Disconnected");
+    if (isAuto) {
+      toast.error("Session expired due to inactivity.");
+    } else {
+      toast.success("User Disconnected");
+    }
     navigate('/');
   };
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = (isAuto = false) => {
     sessionStorage.removeItem('admin_auth');
     setAdminAddress(null);
     setAdminAuthData(null);
-    toast.success("Admin Logged Out");
+    if (isAuto) {
+      toast.error("Admin session expired due to inactivity.");
+    } else {
+      toast.success("Admin Logged Out");
+    }
     navigate('/admin');
   };
 

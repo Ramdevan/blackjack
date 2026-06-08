@@ -1,0 +1,105 @@
+[Provider] Initializing FallbackProvider with 5 nodes:
+  Priority 1: https://bsc-testnet-rpc.publicnode.com
+  Priority 2: https://data-seed-prebsc-1-s1.binance.org:8545
+  Priority 3: https://data-seed-prebsc-2-s1.binance.org:8545
+  Priority 4: https://data-seed-prebsc-1-s2.binance.org:8545
+  Priority 5: https://data-seed-prebsc-2-s2.binance.org:8545
+Blockchain Indexer & API running on port 5000
+Database: Added contract_address column to game_history table
+Database: Retroactively migrated contract_addresses in game_history
+Database: Retroactively migrated game modes for historical tables
+Database initialized successfully with Web2 schema
+Database initialized
+Loaded 51 persistent multiplayer table IDs from settings.
+Starting Robust Blockchain Watcher (Polling Mode for Multiplayer)...
+Watching from block (startup scan range: 112137818 to 112142818): 112137818
+User connected to socket relay: u6ukncBFAiD6czJhAAAB
+Player 0x138bbf366a6faaa7cbc0589b7e24c5b5ec457496 joined table on socket u6ukncBFAiD6czJhAAAB
+[Watcher] Catching up... Scanning chunk: 112137819 to 112138319 (Current: 112142852)
+[Watcher] Catching up... Scanning chunk: 112138320 to 112138820 (Current: 112142885)
+[Watcher] Catching up... Scanning chunk: 112138821 to 112139321 (Current: 112142918)
+[Watcher] Catching up... Scanning chunk: 112139322 to 112139822 (Current: 112142952)
+[Watcher] Catching up... Scanning chunk: 112139823 to 112140323 (Current: 112142985)
+[Watcher] Catching up... Scanning chunk: 112140324 to 112140824 (Current: 112143018)
+[SYNC] On-Chain Table Settled: Table ID 7, Dealer Score 17
+[SYNC-PLAYER] Table 7 Player 0x670F717597F045abDc75b3EFD6b5D28721337eed: Bet 20000000000000000000, Payout 39600000000000000000, Fee 400000000000000000, Result: win, Mode: multiplayer
+[OK] Table 7 Player 0x670F717597F045abDc75b3EFD6b5D28721337eed synced to DB.
+[SYNC-PLAYER] Table 7 Player 0x138bBf366A6FAAa7cbc0589B7E24c5B5eC457496: Bet 10000000000000000000, Payout 19800000000000000000, Fee 200000000000000000, Result: win, Mode: multiplayer
+[OK] Table 7 Player 0x138bBf366A6FAAa7cbc0589B7E24c5B5eC457496 synced to DB.
+[Watcher] Catching up... Scanning chunk: 112140825 to 112141325 (Current: 112143052)
+[Watcher] Catching up... Scanning chunk: 112141326 to 112141826 (Current: 112143085)
+[Watcher] Catching up... Scanning chunk: 112141827 to 112142327 (Current: 112143118)
+[Watcher] Catching up... Scanning chunk: 112142328 to 112142828 (Current: 112143152)
+Checking blocks 112142829 to 112143185 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143186 to 112143218 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143219 to 112143252 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143253 to 112143285 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143286 to 112143318 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143319 to 112143352 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143353 to 112143385 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143386 to 112143418 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143419 to 112143452 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143453 to 112143485 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143486 to 112143519 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143520 to 112143552 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143553 to 112143585 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143586 to 112143618 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143619 to 112143652 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143653 to 112143685 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143686 to 112143719 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143720 to 112143752 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143753 to 112143785 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143786 to 112143819 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143820 to 112143852 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143853 to 112143885 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143886 to 112143919 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143920 to 112143952 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143953 to 112143985 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112143986 to 112144019 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144020 to 112144052 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144053 to 112144085 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144086 to 112144119 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144120 to 112144152 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144153 to 112144185 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144186 to 112144219 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144220 to 112144252 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144253 to 112144285 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144286 to 112144319 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144320 to 112144352 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144353 to 112144386 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144387 to 112144419 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144420 to 112144452 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144453 to 112144485 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144486 to 112144519 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144520 to 112144552 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144553 to 112144586 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144587 to 112144619 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144620 to 112144652 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144653 to 112144685 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144686 to 112144719 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144720 to 112144752 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144753 to 112144785 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144786 to 112144819 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144820 to 112144852 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144853 to 112144886 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144887 to 112144919 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144920 to 112144952 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144953 to 112144986 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112144987 to 112145019 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112145020 to 112145052 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112145053 to 112145086 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112145087 to 112145119 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112145120 to 112145152 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112145153 to 112145186 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112145187 to 112145219 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Checking blocks 112145220 to 112145253 on contract: 0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5
+Failed to fetch on-chain balance for 0x670F717597F045abDc75b3EFD6b5D28721337eed: getaddrinfo EAI_AGAIN bsc-testnet-rpc.publicnode.com
+Failed to fetch on-chain balance for 0x138bbf366a6faaa7cbc0589b7e24c5b5ec457496: getaddrinfo EAI_AGAIN bsc-testnet-rpc.publicnode.com
+Failed to fetch on-chain balance for 0x1de6383befd31a8700ba4ec3bafc1aa4356fb00b: getaddrinfo EAI_AGAIN bsc-testnet-rpc.publicnode.com
+Watcher Polling Error: invalid numeric value (argument="%internal", value={ "code": "EAI_AGAIN", "errno": -3001, "hostname": "bsc-testnet-rpc.publicnode.com", "syscall": "getaddrinfo" }, code=INVALID_ARGUMENT, version=6.16.0)
+[Watcher] Catching up... Scanning chunk: 112145254 to 112145754 (Current: 112150491)
+[Watcher] Catching up... Scanning chunk: 112145755 to 112146255 (Current: 112150524)
+[Watcher] Catching up... Scanning chunk: 112146256 to 112146756 (Current: 112150558)
+[Watcher] Catching up... Scanning chunk: 112146757 to 112147257 (Current: 112150591)
+[Watcher] Catching up... Scanning chunk: 112147258 to 112147758 (Current: 112150624)
+[Watcher] Catching up... Scanning chunk: 112147759 to 112148259 (Current: 112150658)

@@ -65,6 +65,7 @@ export async function initDB() {
         fee_amount DECIMAL(15,2) DEFAULT 0.00,
         result VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        contract_address VARCHAR(255) DEFAULT NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
@@ -97,6 +98,26 @@ export async function initDB() {
       }
     } catch (colErr) {
       console.error('Error adding fee_amount column:', colErr);
+    }
+
+    // Add contract_address column if it does not exist
+    try {
+      const [columns] = await pool.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'game_history' AND COLUMN_NAME = 'contract_address'
+      `, [dbName]);
+      if (columns.length === 0) {
+        await pool.query("ALTER TABLE game_history ADD COLUMN contract_address VARCHAR(255) DEFAULT NULL;");
+        console.log('Database: Added contract_address column to game_history table');
+      }
+
+      // Retroactively assign contract addresses to historical entries
+      await pool.query("UPDATE game_history SET contract_address = '0x02ec22885eF591C954491624E1F2Fa7F24e8618B' WHERE id < 232 AND contract_address IS NULL;");
+      await pool.query("UPDATE game_history SET contract_address = '0x937B6fFd8fF73536340b8B7C2Aa5b337E04DcaA5' WHERE id >= 232 AND contract_address IS NULL;");
+      console.log('Database: Retroactively migrated contract_addresses in game_history');
+    } catch (colErr) {
+      console.error('Error adding/updating contract_address column:', colErr);
     }
 
     // Create settings table

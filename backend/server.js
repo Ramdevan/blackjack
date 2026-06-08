@@ -305,6 +305,12 @@ io.on('connection', (socket) => {
       }
     }
 
+    if (!existingPlayer && connectedPlayers.size >= 5) {
+      console.log(`Player ${address} rejected: table full`);
+      socket.emit('table-full', { message: 'Table is full! (Max 5 players)' });
+      return;
+    }
+
     connectedPlayers.set(socket.id, {
       socketId: socket.id,
       address: address,

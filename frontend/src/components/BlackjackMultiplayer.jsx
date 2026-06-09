@@ -1517,7 +1517,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             )}
           </div>
         ) : (
-          <div className="text-slate-500/20 text-[10px] uppercase font-black tracking-widest border border-dashed border-slate-800/40 rounded-2xl p-6 text-center w-full select-none min-h-[160px] flex items-center justify-center">
+          <div className="text-slate-500/80 text-[16px] uppercase font-black tracking-widest border border-dashed border-slate-800/40 rounded-2xl p-6 text-center w-full select-none min-h-[160px] flex items-center justify-center">
             {seatLabel}
           </div>
         )}

@@ -471,14 +471,14 @@ function AppContent() {
                         desc="Private table. Fast rounds."
                         icon="🃏"
                         onClick={() => changeGameMode('single')}
-                        color="from-blue-600 to-indigo-700"
+                        color="from-emerald-500 to-teal-700"
                       />
                       <ModeCard
                         title="Multiplayer"
                         desc="Shared table. Play with others."
                         icon="👥"
                         onClick={() => changeGameMode('multiplayer')}
-                        color="from-purple-600 to-pink-700"
+                        color="from-amber-500 to-yellow-600"
                       />
                     </div>
                   </div>
@@ -487,7 +487,7 @@ function AppContent() {
                 <div className="w-full relative">
                   <button
                     onClick={() => changeGameMode(null)}
-                    className="absolute top-[-40px] left-4 text-slate-400 hover:text-white flex items-center gap-2 text-xs font-bold transition-all"
+                    className="absolute top-[-40px] left-4 text-slate-400 hover:text-white flex items-center gap-2 text-base font-bold transition-all"
                   >
                     ← BACK TO LOBBY
                   </button>

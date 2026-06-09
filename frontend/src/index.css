@@ -2,8 +2,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Playfair+Display:ital,wght@0,600;1,600&display=swap');
 
 body {
-  background-color: #0b3d1c;
-  /* Casino Green */
+  background-color: #022c22;
   color: #f8fafc;
   font-family: 'Outfit', system-ui, Avenir, Helvetica, Arial, sans-serif;
   margin: 0;
@@ -11,7 +10,23 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow-x: hidden;
-  background-image: radial-gradient(circle at center, #0e5a2a 0%, #052611 100%);
+  background-image:
+    radial-gradient(circle at center, rgba(16, 185, 129, 0.15) 0%, transparent 70%),
+    radial-gradient(circle at center, #064e3b 0%, #022c22 45%, #011c15 100%);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.018;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    repeating-linear-gradient(0deg, #fff, #fff 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(90deg, #fff, #fff 1px, transparent 1px, transparent 4px);
 }
 
 #root {
@@ -26,11 +41,12 @@ body {
   right: -10%;
   height: 250px;
   background:
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.8) 0%, transparent 15%),
-    linear-gradient(to top, #111 0%, #2a1b10 40%, #5c3a21 100%);
+    linear-gradient(to bottom, rgba(217, 119, 6, 0.4) 0%, rgba(217, 119, 6, 0.1) 1.5%, transparent 2%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, transparent 15%),
+    linear-gradient(to top, #0c0806 0%, #1e130b 45%, #422817 100%);
   border-top-left-radius: 50% 100%;
   border-top-right-radius: 50% 100%;
-  box-shadow: inset 0 10px 20px rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 12px 25px rgba(0, 0, 0, 0.9), 0 -8px 20px rgba(0, 0, 0, 0.5);
   pointer-events: none;
   z-index: 0;
 }
@@ -41,12 +57,54 @@ body {
   left: -5%;
   right: -5%;
   height: 100px;
-  background: #111;
+  background: linear-gradient(to bottom, #18181b 0%, #09090b 100%);
   border-top-left-radius: 50% 100%;
   border-top-right-radius: 50% 100%;
-  box-shadow: inset 0 20px 20px rgba(255, 255, 255, 0.05), 0 -5px 15px rgba(0, 0, 0, 0.9);
+  box-shadow: inset 0 25px 25px rgba(255, 255, 255, 0.03), 0 -8px 25px rgba(0, 0, 0, 0.95);
   pointer-events: none;
   z-index: 1;
+}
+
+/* Gold Embossed Felt Print Graphics */
+.table-felt-print {
+  position: absolute;
+  top: 15%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 900px;
+  height: 450px;
+  border: 2.5px solid rgba(217, 119, 6, 0.12);
+  border-bottom: none;
+  border-top-left-radius: 450px;
+  border-top-right-radius: 450px;
+  pointer-events: none;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 100px;
+}
+
+.table-felt-text-1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  color: rgba(217, 119, 6, 0.35);
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.table-felt-text-2 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.22);
+  text-transform: uppercase;
 }
 
 /* Betting Circle */
@@ -143,9 +201,13 @@ body {
 }
 
 .card-hidden {
-  background: linear-gradient(135deg, #1e3a8a 0%, #172554 100%);
-  border: 2px solid #ffffff;
-  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.1) 0, rgba(255, 255, 255, 0.1) 2px, transparent 2px, transparent 6px);
+  background: radial-gradient(circle at center, #881337 0%, #4c0519 100%);
+  border: 2.5px solid #fbbf24;
+  background-image:
+    radial-gradient(circle at center, rgba(251, 191, 36, 0.12) 0%, transparent 70%),
+    repeating-linear-gradient(45deg, rgba(251, 191, 36, 0.05) 0, rgba(251, 191, 36, 0.05) 1px, transparent 1px, transparent 8px),
+    repeating-linear-gradient(-45deg, rgba(251, 191, 36, 0.05) 0, rgba(251, 191, 36, 0.05) 1px, transparent 1px, transparent 8px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.5), inset 0 0 10px rgba(0,0,0,0.8);
   color: transparent;
 }
 

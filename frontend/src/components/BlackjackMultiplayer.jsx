@@ -194,73 +194,73 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           socketPlayersRef.current = data.players;
           setOtherPlayers(prevOthers => {
             return data.players
-            .filter(p => p.address.toLowerCase() !== authData.address.toLowerCase())
-            .map(p => {
-              const existing = prevOthers.find(op => op.address.toLowerCase() === p.address.toLowerCase());
-              if (existing && (!p.cards || p.cards.length === 0) && existing.cards && existing.cards.length > 0) {
-                return {
-                  ...p,
-                  cards: existing.cards,
-                  score: existing.score
-                };
-              }
-              return p;
-            });
-        });
+              .filter(p => p.address.toLowerCase() !== authData.address.toLowerCase())
+              .map(p => {
+                const existing = prevOthers.find(op => op.address.toLowerCase() === p.address.toLowerCase());
+                if (existing && (!p.cards || p.cards.length === 0) && existing.cards && existing.cards.length > 0) {
+                  return {
+                    ...p,
+                    cards: existing.cards,
+                    score: existing.score
+                  };
+                }
+                return p;
+              });
+          });
 
-        // Immediately update our own state from socket data to prevent desync during transit
-        const myPlayer = data.players.find(p => p.address.toLowerCase() === authData.address.toLowerCase());
-        if (myPlayer) {
-          if (myPlayer.cards && myPlayer.cards.length > 0) {
-            setPlayerHand(myPlayer.cards);
+          // Immediately update our own state from socket data to prevent desync during transit
+          const myPlayer = data.players.find(p => p.address.toLowerCase() === authData.address.toLowerCase());
+          if (myPlayer) {
+            if (myPlayer.cards && myPlayer.cards.length > 0) {
+              setPlayerHand(myPlayer.cards);
+            }
+            if (myPlayer.cardsRight && myPlayer.cardsRight.length > 0) {
+              setPlayerHandRight(myPlayer.cardsRight);
+            }
+            setIsSplit(myPlayer.isSplit || false);
+
+            const myTurn = myPlayer.status === 'Playing';
+            const savedIsTurnFinished = localStorage.getItem('bj_is_turn_finished') === 'true';
+            setIsMyTurn((myTurn && !savedIsTurnFinished) || data.tableState === 'betting');
           }
-          if (myPlayer.cardsRight && myPlayer.cardsRight.length > 0) {
-            setPlayerHandRight(myPlayer.cardsRight);
+
+          if (data.tableState) {
+            setTableState(data.tableState);
           }
-          setIsSplit(myPlayer.isSplit || false);
-          
-          const myTurn = myPlayer.status === 'Playing';
-          const savedIsTurnFinished = localStorage.getItem('bj_is_turn_finished') === 'true';
-          setIsMyTurn((myTurn && !savedIsTurnFinished) || data.tableState === 'betting');
-        }
 
-        if (data.tableState) {
-          setTableState(data.tableState);
-        }
+          const leader = data.players[0] && data.players[0].address.toLowerCase() === authData.address.toLowerCase();
+          setIsTableLeader(leader);
 
-        const leader = data.players[0] && data.players[0].address.toLowerCase() === authData.address.toLowerCase();
-        setIsTableLeader(leader);
+          if (data.tableDealerHand && data.tableDealerHand.length > 0) {
+            setSharedDealerCards(data.tableDealerHand);
+            setDealerHand(data.tableDealerHand);
+          }
 
-        if (data.tableDealerHand && data.tableDealerHand.length > 0) {
-          setSharedDealerCards(data.tableDealerHand);
-          setDealerHand(data.tableDealerHand);
-        }
+          if (data.activeTableId && Number(data.activeTableId) > 0) {
+            const tIdStr = data.activeTableId.toString();
+            if (tIdStr !== spentTableIdRef.current) {
+              setGameId(tIdStr);
+              localStorage.setItem('bj_active_game_id', tIdStr);
 
-        if (data.activeTableId && Number(data.activeTableId) > 0) {
-          const tIdStr = data.activeTableId.toString();
-          if (tIdStr !== spentTableIdRef.current) {
-            setGameId(tIdStr);
-            localStorage.setItem('bj_active_game_id', tIdStr);
-            
-            if (data.tableState === 'playing') {
-              if (statusRef.current === 'betting') {
-                setStatus('playing');
+              if (data.tableState === 'playing') {
+                if (statusRef.current === 'betting') {
+                  setStatus('playing');
+                }
+                setTimeout(() => {
+                  syncCardsFromChain(tIdStr);
+                }, 500);
               }
-              setTimeout(() => {
-                syncCardsFromChain(tIdStr);
-              }, 500);
+            } else {
+              setGameId(null);
+              localStorage.removeItem('bj_active_game_id');
             }
           } else {
             setGameId(null);
             localStorage.removeItem('bj_active_game_id');
           }
-        } else {
-          setGameId(null);
-          localStorage.removeItem('bj_active_game_id');
         }
       }
-    }
-  });
+    });
 
     return () => {
       newSocket.disconnect();
@@ -276,7 +276,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           console.warn("Table is not fully settled/revealed on the RPC node yet. Waiting for next sync cycle...");
           return;
         }
-        
+
         // Update balance from token contract
         if (tokenContract) {
           try {
@@ -286,7 +286,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             console.error("Failed to update balance:", e);
           }
         }
-        
+
         try {
           const finalPlayerHand = synced.playerHand;
           const finalDealerHand = synced.dealerHand;
@@ -311,7 +311,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           } else {
             const score = calculateScore(finalPlayerHand);
             const busted = score > 21;
-            
+
             if (!busted && score <= 21) {
               const isDealerBlackjack = (finalDealerHand.length === 2 && dealerScoreNum === 21);
               const isPlayerBlackjack = (finalPlayerHand.length === 2 && score === 21);
@@ -330,7 +330,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           setOutcome(outcomeVal);
           setStatus('settled');
           setSpentTableId(gameId);
-          
+
           if (socket) {
             socket.emit('player-action', {
               action: 'settle',
@@ -372,7 +372,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
               });
               await tx.wait();
             }
-            
+
             // Sync final cards (revealing all dealer cards)
             const synced = await syncCardsFromChain(gameId, true);
             if (!synced || !synced.isSettled) {
@@ -382,7 +382,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             const finalPlayerHand = synced.playerHand;
             const finalDealerHand = synced.dealerHand;
             const dealerScoreNum = calculateScore(finalDealerHand);
-            
+
             let outcomeVal = 'loss';
             if (isSplit) {
               const leftOutcome = getHandOutcome(playerHandLeft, finalDealerHand);
@@ -402,7 +402,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             } else {
               const score = calculateScore(finalPlayerHand);
               const busted = score > 21;
-              
+
               if (!busted && score <= 21) {
                 const isDealerBlackjack = (finalDealerHand.length === 2 && dealerScoreNum === 21);
                 const isPlayerBlackjack = (finalPlayerHand.length === 2 && score === 21);
@@ -562,7 +562,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       let tableInfo = await activeContract.tables(activeId);
       let onChainDealerCards = await activeContract.getDealerCards(activeId);
       let playerDetails = await activeContract.getPlayerBetDetails(activeId, authData.address);
-      
+
       const currentTableState = tableStateRef.current || tableState;
       const expectSettled = forceRevealDealer || currentTableState === 'settled' || currentTableState === 'dealer-turn';
       const isRoundActive = Number(tableInfo.state) === 1 || currentTableState === 'playing' || expectSettled;
@@ -588,7 +588,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         tableInfo = await activeContract.tables(activeId);
         onChainDealerCards = await activeContract.getDealerCards(activeId);
         isSettled = Number(tableInfo.state) >= 2 && onChainDealerCards.length >= 2 && Number(onChainDealerCards[1]) > 0;
-        
+
         if (!isSettled) {
           console.warn("RPC node still stale on settlement cards. Retrying on-chain sync in 2000ms...");
           await new Promise(resolve => setTimeout(resolve, 2000));
@@ -614,10 +614,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         ? Math.max(onChainTurnIndex, socketTurnIndexRef.current)
         : onChainTurnIndex;
       const activePlayers = await activeContract.getActivePlayers(activeId);
-      const activePlayerAddress = (activePlayers && finalTurnIndex < activePlayers.length) 
-        ? activePlayers[finalTurnIndex] 
+      const activePlayerAddress = (activePlayers && finalTurnIndex < activePlayers.length)
+        ? activePlayers[finalTurnIndex]
         : null;
-      
+
       const myTurn = activePlayerAddress && activePlayerAddress.toLowerCase() === authData.address.toLowerCase();
       const savedIsTurnFinished = localStorage.getItem('bj_is_turn_finished') === 'true';
       setIsMyTurn((myTurn && !savedIsTurnFinished && !isSettled) || currentTableState === 'betting');
@@ -637,7 +637,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       let activeHandIndex = 0;
       let formattedLeft = [];
       let formattedRight = [];
-      
+
       try {
         const splitInfo = await activeContract.getPlayerSplitDetails(activeId, authData.address);
         onChainIsSplit = splitInfo.isSplit;
@@ -705,7 +705,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         } else {
           const score = calculateScore(finalPlayerHand);
           const busted = score > 21;
-          
+
           if (!busted && score <= 21) {
             const isDealerBlackjack = (finalDealerHand.length === 2 && dealerScoreNum === 21);
             const isPlayerBlackjack = (finalPlayerHand.length === 2 && score === 21);
@@ -724,7 +724,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         setOutcome(outcomeVal);
         setStatus('settled');
         setSpentTableId(activeId);
-        
+
         // Update balance from token contract immediately
         if (tokenContract) {
           tokenContract.balanceOf(authData.address).then(balance => {
@@ -751,7 +751,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
               let otherActiveHandIndex = 0;
               let otherCardsLeft = [];
               let otherCardsRight = [];
-              
+
               try {
                 const splitInfo = await activeContract.getPlayerSplitDetails(activeId, p.address);
                 otherIsSplit = splitInfo.isSplit;
@@ -764,16 +764,16 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 console.warn(e);
               }
 
-              const cards = otherIsSplit 
+              const cards = otherIsSplit
                 ? (otherActiveHandIndex === 0 ? otherCardsLeft : otherCardsRight)
                 : details.cards.map(c => formatCard(Number(c)));
               const score = Number(details.score);
-              
+
               // On-chain status determination with socket status fallback to handle RPC replica lag
               let statusText = 'Waiting Turn';
               const socketPlayer = (socketPlayersRef.current || []).find(sp => sp.address.toLowerCase() === p.address.toLowerCase());
               const socketStatus = socketPlayer ? socketPlayer.status : p.status;
-              
+
               const isStood = details.stood || socketStatus === 'Stood' || socketStatus === 'Left Stood' || socketStatus === 'Stood Primary';
               const isBusted = details.busted || socketStatus === 'Bust!' || socketStatus === 'Left Busted' || socketStatus === 'Bust Primary!';
               const isSettledStatus = details.settled || socketStatus === 'Settled' || socketStatus === 'Finished' || socketStatus === 'Blackjack';
@@ -877,7 +877,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         toast.success("Creating new on-chain Blackjack Table...", { duration: 3000 });
         const createTx = await contract.createTable();
         const createReceipt = await createTx.wait();
-        
+
         const createEvent = createReceipt.logs.find(log => {
           try {
             const parsed = contract.interface.parseLog(log);
@@ -921,7 +921,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           score: 0
         });
       }
-      
+
       setBetPlaced(true);
       toast.success("Bet placed on-chain successfully! Waiting for other players.");
     } catch (err) {
@@ -991,10 +991,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       // Check if it is actually our turn on-chain
       const activePlayers = await contract.getActivePlayers(activeId);
       const currentTurnIndex = Number(tableInfo.currentTurnIndex);
-      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length) 
-        ? activePlayers[currentTurnIndex] 
+      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length)
+        ? activePlayers[currentTurnIndex]
         : null;
-      
+
       if (!activePlayerAddress || activePlayerAddress.toLowerCase() !== authData.address.toLowerCase()) {
         toast.error("Action rejected: Not your turn on-chain! Syncing table...");
         await syncCardsFromChain(activeId);
@@ -1005,7 +1005,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       // Check player hand details
       const playerDetails = await contract.getPlayerBetDetails(activeId, authData.address);
       const splitInfo = await contract.getPlayerSplitDetails(activeId, authData.address).catch(() => ({ isSplit: false, activeHandIndex: 0 }));
-      
+
       if (splitInfo.isSplit) {
         if (Number(splitInfo.activeHandIndex) === 0) {
           if (playerDetails.stood || playerDetails.busted || Number(playerDetails.score) > 21) {
@@ -1103,10 +1103,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       // Check if it is actually our turn on-chain
       const activePlayers = await contract.getActivePlayers(activeId);
       const currentTurnIndex = Number(tableInfo.currentTurnIndex);
-      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length) 
-        ? activePlayers[currentTurnIndex] 
+      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length)
+        ? activePlayers[currentTurnIndex]
         : null;
-      
+
       if (!activePlayerAddress || activePlayerAddress.toLowerCase() !== authData.address.toLowerCase()) {
         toast.error("Action rejected: Not your turn on-chain! Syncing table...");
         await syncCardsFromChain(activeId);
@@ -1134,7 +1134,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
 
       // Wait 1000ms for RPC node synchronization
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       const synced = await syncCardsFromChain(activeId);
 
       if (socket) {
@@ -1183,10 +1183,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       // Check if it is actually our turn on-chain
       const activePlayers = await contract.getActivePlayers(activeId);
       const currentTurnIndex = Number(tableInfo.currentTurnIndex);
-      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length) 
-        ? activePlayers[currentTurnIndex] 
+      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length)
+        ? activePlayers[currentTurnIndex]
         : null;
-      
+
       if (!activePlayerAddress || activePlayerAddress.toLowerCase() !== authData.address.toLowerCase()) {
         toast.error("Action rejected: Not your turn on-chain! Syncing table...");
         await syncCardsFromChain(activeId);
@@ -1228,7 +1228,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       const synced = await syncCardsFromChain(activeId);
-      
+
       toast.success("Double Down successful!");
       setCurrentBet(prev => Number(prev) + Number(betAmount));
 
@@ -1236,7 +1236,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         const splitInfo = await contract.getPlayerSplitDetails(activeId, authData.address).catch(() => ({ isSplit: false, activeHandIndex: 0 }));
         const finalScore = synced ? calculateScore(synced.playerHand) : 0;
         const isBust = finalScore > 21;
-        
+
         if (splitInfo.isSplit && Number(splitInfo.activeHandIndex) === 1) {
           // Transitioned to right hand
           socket.emit('player-action', {
@@ -1274,7 +1274,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       const tx = await contract.forceTimeout(activeId);
       await tx.wait();
       toast.success("Stalled player timed out successfully!");
-      
+
       if (socket) {
         socket.emit('player-action', { action: 'stand' });
       }
@@ -1303,10 +1303,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       // Check if it is actually our turn on-chain
       const activePlayers = await contract.getActivePlayers(activeId);
       const currentTurnIndex = Number(tableInfo.currentTurnIndex);
-      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length) 
-        ? activePlayers[currentTurnIndex] 
+      const activePlayerAddress = (activePlayers && currentTurnIndex < activePlayers.length)
+        ? activePlayers[currentTurnIndex]
         : null;
-      
+
       if (!activePlayerAddress || activePlayerAddress.toLowerCase() !== authData.address.toLowerCase()) {
         toast.error("Action rejected: Not your turn on-chain! Syncing table...");
         await syncCardsFromChain(activeId);
@@ -1346,10 +1346,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       await tx.wait();
 
       toast.success("Split successful!");
-      
+
       // Sync cards immediately
       const synced = await syncCardsFromChain(activeId);
-      
+
       // Update balance
       if (tokenContract) {
         try {
@@ -1359,7 +1359,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
           console.error("Failed to update balance:", e);
         }
       }
-      
+
       // Emit socket event to notify other players that this hand split
       if (socket && synced) {
         socket.emit('player-action', {
@@ -1432,18 +1432,18 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     if (!handCards || handCards.length === 0) return 'loss';
     const score = calculateScore(handCards);
     const dScore = calculateScore(dealerCards);
-    
+
     if (score > 21) return 'loss'; // Busted
     if (dScore > 21) return 'win'; // Dealer busted
-    
+
     // Check blackjack
     const isDealerBJ = dealerCards.length === 2 && dScore === 21;
     const isPlayerBJ = handCards.length === 2 && score === 21;
-    
+
     if (isPlayerBJ && !isDealerBJ) return 'win';
     if (!isPlayerBJ && isDealerBJ) return 'loss';
     if (isPlayerBJ && isDealerBJ) return 'push';
-    
+
     if (score > dScore) return 'win';
     if (score < dScore) return 'loss';
     return 'push';
@@ -1458,11 +1458,10 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             <span className="text-[10px] font-black text-slate-400 tracking-tight mb-1.5">
               {player.address.slice(0, 6)}...{player.address.slice(-4)}
             </span>
-            <span className={`text-[8px] uppercase font-black px-2 py-0.5 rounded border mb-3 ${
-              player.status.includes('Winner') || player.status.includes('Blackjack') ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
-              player.status.includes('Lost') || player.status.includes('Bust') ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-              'bg-slate-800 border-slate-750 text-slate-400'
-            }`}>{player.status}</span>
+            <span className={`text-[8px] uppercase font-black px-2 py-0.5 rounded border mb-3 ${player.status.includes('Winner') || player.status.includes('Blackjack') ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                player.status.includes('Lost') || player.status.includes('Bust') ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                  'bg-slate-800 border-slate-750 text-slate-400'
+              }`}>{player.status}</span>
 
             {/* Compact hand rendering */}
             <div className="flex flex-col items-center gap-1.5 w-full mb-3">
@@ -1472,7 +1471,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                     <span className="text-[7px] text-slate-400 mb-1">Left ({calculateScore(player.cardsLeft || [])})</span>
                     <div className="flex justify-center min-h-[45px] relative">
                       <div className="flex">
-                         {player.cardsLeft && player.cardsLeft.map((c, idx) => (
+                        {player.cardsLeft && player.cardsLeft.map((c, idx) => (
                           <div key={idx} className="transform transition-transform" style={{ marginLeft: idx > 0 ? '-25px' : '0', zIndex: idx }}>
                             <div className="scale-75 origin-top-left">
                               <Web2Card suit={c.suit} value={c.value} />
@@ -1549,13 +1548,12 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       {/* Outcome Banner */}
       {status === 'settled' && outcome && (
         <div className="my-4 animate-in zoom-in-50 duration-500 flex flex-col items-center">
-          <div className={`px-8 py-3 rounded-2xl border text-2xl font-black tracking-widest uppercase shadow-[0_0_35px_rgba(0,0,0,0.8)] ${
-            outcome === 'win'
+          <div className={`px-8 py-3 rounded-2xl border text-2xl font-black tracking-widest uppercase shadow-[0_0_35px_rgba(0,0,0,0.8)] ${outcome === 'win'
               ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-emerald-500/20'
               : outcome === 'push'
                 ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-500/20'
                 : 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20'
-          }`}>
+            }`}>
             {isSplit ? (
               <>
                 {outcome === 'win' && (
@@ -1565,7 +1563,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 )}
                 {outcome === 'push' && (
                   (getHandOutcome(playerHandLeft, dealerHand) === 'win' && getHandOutcome(playerHandRight, dealerHand) === 'loss') ||
-                  (getHandOutcome(playerHandLeft, dealerHand) === 'loss' && getHandOutcome(playerHandRight, dealerHand) === 'win')
+                    (getHandOutcome(playerHandLeft, dealerHand) === 'loss' && getHandOutcome(playerHandRight, dealerHand) === 'win')
                     ? "🤝 Even Money (Win 1, Lose 1)"
                     : getHandOutcome(playerHandLeft, dealerHand) === 'push' && getHandOutcome(playerHandRight, dealerHand) === 'push'
                       ? "🤝 Push Both Hands"
@@ -1623,13 +1621,12 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                   Score: {calculateScore(playerHandLeft)}
                 </div>
                 {status === 'settled' && (
-                  <div className={`mt-2 px-2.5 py-0.5 rounded-lg border text-[9px] font-extrabold uppercase tracking-wider ${
-                    getHandOutcome(playerHandLeft, dealerHand) === 'win'
+                  <div className={`mt-2 px-2.5 py-0.5 rounded-lg border text-[9px] font-extrabold uppercase tracking-wider ${getHandOutcome(playerHandLeft, dealerHand) === 'win'
                       ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
                       : getHandOutcome(playerHandLeft, dealerHand) === 'push'
                         ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
                         : 'bg-red-500/20 border-red-500/30 text-red-400'
-                  }`}>
+                    }`}>
                     {getHandOutcome(playerHandLeft, dealerHand) === 'win' && "🏆 Won"}
                     {getHandOutcome(playerHandLeft, dealerHand) === 'push' && "🤝 Pushed"}
                     {getHandOutcome(playerHandLeft, dealerHand) === 'loss' && (calculateScore(playerHandLeft) > 21 ? "💥 Busted" : "❌ Lost")}
@@ -1655,13 +1652,12 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                   Score: {calculateScore(playerHandRight)}
                 </div>
                 {status === 'settled' && (
-                  <div className={`mt-2 px-2.5 py-0.5 rounded-lg border text-[9px] font-extrabold uppercase tracking-wider ${
-                    getHandOutcome(playerHandRight, dealerHand) === 'win'
+                  <div className={`mt-2 px-2.5 py-0.5 rounded-lg border text-[9px] font-extrabold uppercase tracking-wider ${getHandOutcome(playerHandRight, dealerHand) === 'win'
                       ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
                       : getHandOutcome(playerHandRight, dealerHand) === 'push'
                         ? 'bg-amber-500/20 border-amber-500/30 text-amber-400'
                         : 'bg-red-500/20 border-red-500/30 text-red-400'
-                  }`}>
+                    }`}>
                     {getHandOutcome(playerHandRight, dealerHand) === 'win' && "🏆 Won"}
                     {getHandOutcome(playerHandRight, dealerHand) === 'push' && "🤝 Pushed"}
                     {getHandOutcome(playerHandRight, dealerHand) === 'loss' && (calculateScore(playerHandRight) > 21 ? "💥 Busted" : "❌ Lost")}

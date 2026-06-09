@@ -1,154 +1,95 @@
 import React from 'react';
 
+const FundStatCard = ({ label, value, unit, addr, accent, icon, badge, badgeClass }) => (
+  <div style={{
+    position: 'relative', overflow: 'hidden', padding: '20px', borderRadius: '16px',
+    background: 'rgba(8,4,20,0.85)', border: `1px solid ${accent}33`,
+    boxShadow: `0 0 20px ${accent}18`, backdropFilter: 'blur(12px)'
+  }}>
+    <div style={{ position: 'absolute', top: 0, right: 0, padding: '14px', fontSize: '38px', opacity: 0.8, pointerEvents: 'none' }}>{icon}</div>
+    <div style={{ position: 'relative', zIndex: 1 }}>
+      <div style={{ fontSize: '13px', fontWeight: 900, letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(230, 230, 230, 1)', marginBottom: '8px' }}>{label}</div>
+      <div style={{ fontSize: '24px', fontWeight: 900, color: '#fff', letterSpacing: '-0.5px', marginBottom: '10px' }}>
+        {Number(value).toLocaleString()} <span style={{ fontSize: '14px', color: 'rgba(249, 243, 243, 0.95)' }}>{unit}</span>
+      </div>
+      {badge && <span className={`admin-badge ${badgeClass}`}>{badge}</span>}
+      {addr && <div style={{ marginTop: '10px', fontSize: '13px', fontFamily: 'monospace', color: 'rgba(240, 243, 247, 1)' }}>{addr.slice(0,14)}...{addr.slice(-10)}</div>}
+    </div>
+  </div>
+);
+
 const OnChainFunds = ({
-  onChainStats,
-  fundAmount,
-  setFundAmount,
-  withdrawAmount,
-  setWithdrawAmount,
-  fundsLoading,
-  handleFundDealer,
-  handleWithdrawChips,
-  CONTRACT_ADDRESS,
-  TOKEN_ADDRESS,
-  address
-}) => {
-  return (
-    <div className="animate-in fade-in duration-300">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        
-        {/* Dealer Contract Balance Card */}
-        <div className="relative overflow-hidden p-5 rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-600 to-teal-700 shadow-xl">
-          <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">🃏</div>
-          <div className="relative z-10">
-            <div className="text-white/60 text-xs font-black uppercase tracking-widest mb-1">Dealer Balance</div>
-            <div className="text-3xl font-black text-white tracking-tighter mb-3">
-              {Number(onChainStats.dealerBalance).toLocaleString()} <span className="text-xs">Chips</span>
-            </div>
-            {Number(onChainStats.dealerBalance) < 100 ? (
-              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-[9px] font-black rounded-full border border-amber-500/30 uppercase tracking-widest">
-                ⚠️ Low Balance: Fund Now
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 bg-white/20 text-white text-[9px] font-black rounded-full border border-white/10 uppercase tracking-widest">
-                🟢 Healthy Balance
-              </span>
-            )}
-            <div className="mt-3 text-[9px] font-mono text-white/50">{CONTRACT_ADDRESS.slice(0, 14)}...{CONTRACT_ADDRESS.slice(-10)}</div>
-          </div>
-        </div>
+  onChainStats, fundAmount, setFundAmount, withdrawAmount, setWithdrawAmount,
+  fundsLoading, handleFundDealer, handleWithdrawChips, CONTRACT_ADDRESS, TOKEN_ADDRESS, address
+}) => (
+  <div className="animate-in fade-in duration-300" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-        {/* Admin Wallet Balance Card */}
-        <div className="relative overflow-hidden p-5 rounded-2xl border border-white/10 bg-gradient-to-br from-blue-600 to-indigo-700 shadow-xl">
-          <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">💼</div>
-          <div className="relative z-10">
-            <div className="text-white/60 text-xs font-black uppercase tracking-widest mb-1">Admin Wallet Balance</div>
-            <div className="text-3xl font-black text-white tracking-tighter mb-3">
-              {Number(onChainStats.adminBalance).toLocaleString()} <span className="text-xs">Chips</span>
-            </div>
-            <span className="px-2 py-0.5 bg-white/20 text-white text-[9px] font-black rounded-full border border-white/10 uppercase tracking-widest">
-              Connected Admin
-            </span>
-            <div className="mt-3 text-[9px] font-mono text-white/50">{address.slice(0, 14)}...{address.slice(-10)}</div>
-          </div>
-        </div>
+    {/* Stat cards */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+      <FundStatCard
+        label="Dealer Balance" value={onChainStats.dealerBalance} unit="Chips" icon="🃏"
+        accent="#10b981" addr={CONTRACT_ADDRESS}
+        badge={Number(onChainStats.dealerBalance) < 100 ? '⚠️ Low — Fund Now' : '🟢 Healthy'}
+        badgeClass={Number(onChainStats.dealerBalance) < 100 ? 'admin-badge--amber' : 'admin-badge--green'}
+      />
+      <FundStatCard
+        label="Admin Wallet" value={onChainStats.adminBalance} unit="Chips" icon="💼"
+        accent="#3b82f6" addr={address}
+        badge="Connected Admin" badgeClass="admin-badge--blue"
+      />
+      <FundStatCard
+        label="Circulating Supply" value={onChainStats.totalSupply} unit="Chips" icon="🌐"
+        accent="#8b5cf6" addr={TOKEN_ADDRESS}
+        badge="Total Supply" badgeClass="admin-badge--purple"
+      />
+    </div>
 
-        {/* Total supply card */}
-        <div className="relative overflow-hidden p-5 rounded-2xl border border-white/10 bg-gradient-to-br from-purple-600 to-fuchsia-700 shadow-xl">
-          <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">🌐</div>
-          <div className="relative z-10">
-            <div className="text-white/60 text-xs font-black uppercase tracking-widest mb-1">Circulating Supply</div>
-            <div className="text-3xl font-black text-white tracking-tighter mb-3">
-              {Number(onChainStats.totalSupply).toLocaleString()} <span className="text-xs">Chips</span>
-            </div>
-            <span className="px-2 py-0.5 bg-white/20 text-white text-[9px] font-black rounded-full border border-white/10 uppercase tracking-widest">
-              Total Circulating
-            </span>
-            <div className="mt-3 text-[9px] font-mono text-white/50">{TOKEN_ADDRESS.slice(0, 14)}...{TOKEN_ADDRESS.slice(-10)}</div>
-          </div>
-        </div>
+    {/* Action forms */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
 
+      {/* Fund dealer */}
+      <div className="admin-panel" style={{ position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '160px', height: '160px', background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)', pointerEvents: 'none' }}></div>
+        <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#fff', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ padding: '5px', background: 'rgba(16,185,129,0.15)', borderRadius: '8px' }}>➕</span>
+          Fund Dealer Contract
+        </h3>
+        <p style={{ fontSize: '15px', color: 'rgba(100,116,139,0.65)', marginBottom: '16px', lineHeight: 1.5 }}>
+          Transfer chips from your admin wallet into the Blackjack smart contract.
+        </p>
+        <form onSubmit={handleFundDealer} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 900, letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(100,116,139,0.6)', marginBottom: '6px' }}>Amount (Chips)</label>
+            <input type="number" placeholder="e.g. 5000" value={fundAmount} onChange={e => setFundAmount(e.target.value)} disabled={fundsLoading} className="admin-input" />
+          </div>
+          <button type="submit" disabled={fundsLoading || !fundAmount} className="admin-btn-green">
+            {fundsLoading ? 'Processing...' : 'Transfer & Fund Dealer'}
+          </button>
+        </form>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Fund Dealer (Transfer) Form */}
-        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 relative overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none"></div>
-          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-            <span className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg">➕</span>
-            Fund Dealer Contract
-          </h3>
-          <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
-            Transfer game chips directly from your connected MetaMask admin wallet balance into the Blackjack smart contract balance.
-          </p>
-
-          <form onSubmit={handleFundDealer} className="space-y-3">
-            <div>
-              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Amount to Fund (Chips)</label>
-              <input
-                type="number"
-                placeholder="e.g. 5000"
-                value={fundAmount}
-                onChange={(e) => setFundAmount(e.target.value)}
-                disabled={fundsLoading}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={fundsLoading || !fundAmount}
-              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs rounded-xl hover:scale-[1.01] active:scale-95 shadow-xl shadow-emerald-500/10 flex items-center justify-center gap-2 uppercase tracking-widest transition-all disabled:opacity-20 disabled:pointer-events-none"
-            >
-              {fundsLoading ? (
-                <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
-              ) : (
-                "Transfer & Fund Dealer"
-              )}
-            </button>
-          </form>
-        </div>
-
-        {/* Withdraw Dealer Profit Form */}
-        <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5 relative overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-orange-500/5 rounded-full blur-[100px] pointer-events-none"></div>
-          <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
-            <span className="p-1.5 bg-orange-500/20 text-orange-400 rounded-lg">💸</span>
-            Withdraw Excess Profits
-          </h3>
-          <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
-            Tolerate or retrieve outstanding game chip profits accumulated inside the Blackjack smart contract directly back into your authorized admin wallet.
-          </p>
-
-          <form onSubmit={handleWithdrawChips} className="space-y-3">
-            <div>
-              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Amount to Withdraw (Chips)</label>
-              <input
-                type="number"
-                placeholder="e.g. 2000"
-                value={withdrawAmount}
-                onChange={(e) => setWithdrawAmount(e.target.value)}
-                disabled={fundsLoading}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-orange-500 transition-colors"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={fundsLoading || !withdrawAmount || Number(withdrawAmount) > Number(onChainStats.dealerBalance)}
-              className="w-full py-3 bg-orange-500 hover:bg-orange-400 text-black font-black text-xs rounded-xl hover:scale-[1.01] active:scale-95 shadow-xl shadow-orange-500/10 flex items-center justify-center gap-2 uppercase tracking-widest transition-all disabled:opacity-20 disabled:pointer-events-none"
-            >
-              {fundsLoading ? (
-                <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
-              ) : (
-                "Withdraw Excess Profits"
-              )}
-            </button>
-          </form>
-        </div>
-
+      {/* Withdraw */}
+      <div className="admin-panel" style={{ position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '160px', height: '160px', background: 'radial-gradient(circle, rgba(249,115,22,0.08) 0%, transparent 70%)', pointerEvents: 'none' }}></div>
+        <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#fff', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ padding: '5px', background: 'rgba(249,115,22,0.15)', borderRadius: '8px' }}>💸</span>
+          Withdraw Excess Profits
+        </h3>
+        <p style={{ fontSize: '15px', color: 'rgba(100,116,139,0.65)', marginBottom: '16px', lineHeight: 1.5 }}>
+          Retrieve outstanding profits from the contract back to your admin wallet.
+        </p>
+        <form onSubmit={handleWithdrawChips} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 900, letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(100,116,139,0.6)', marginBottom: '6px' }}>Amount (Chips)</label>
+            <input type="number" placeholder="e.g. 2000" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} disabled={fundsLoading} className="admin-input" />
+          </div>
+          <button type="submit" disabled={fundsLoading || !withdrawAmount || Number(withdrawAmount) > Number(onChainStats.dealerBalance)} className="admin-btn-orange">
+            {fundsLoading ? 'Processing...' : 'Withdraw Excess Profits'}
+          </button>
+        </form>
       </div>
     </div>
-  );
-};
+  </div>
+);
 
 export default OnChainFunds;

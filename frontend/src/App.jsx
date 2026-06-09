@@ -8,6 +8,8 @@ import AdminPanel from './components/AdminPanel';
 import Deposit from './components/Deposit';
 import PlayerHistoryPage from './components/PlayerHistoryPage';
 import { getTokenContract, CONTRACT_ADDRESS } from './utils/contract';
+import singlePlayerImg from './assets/single_player_card.png';
+import multiplayerImg from './assets/multiplayer_card.png';
 
 // Helper component to access navigation inside BrowserRouter
 function AppContent() {
@@ -337,9 +339,9 @@ function AppContent() {
   const isAdmin = address?.toLowerCase() === ADMIN_ADDRESS;
 
   return (
-    <div className={`min-h-screen relative flex flex-col items-center overflow-x-hidden w-full transition-colors duration-500 ${location.pathname === '/admin' ? 'bg-[#006241] bg-gradient-to-tr from-[#006241] via-[#006241] to-[#006241]' : ''}`}>
-      {location.pathname !== '/admin' && <div className="table-edge"></div>}
-      {location.pathname !== '/admin' && <div className="table-leather"></div>}
+    <div className="min-h-screen relative flex flex-col items-center overflow-x-hidden w-full">
+      <div className="cyber-bg-cards"></div>
+      {location.pathname !== '/admin' && <div className="cyber-table-bottom"></div>}
 
       <Toaster
         position="top-right"
@@ -356,73 +358,54 @@ function AppContent() {
       />
 
       {location.pathname !== '/admin' && (
-        <header className="w-full max-w-6xl mx-auto mt-6 bg-black/80 backdrop-blur-xl rounded-3xl px-8 py-4 flex justify-between items-center z-30 border border-white/5 shadow-2xl">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="text-xl font-black text-white tracking-tighter hover:scale-105 transition-transform">BLACKJACK</Link>
-          </div>
+        <header className="cyber-header">
+          <Link to="/" className="cyber-brand">BLACKJACK</Link>
 
-          <div className="hidden md:flex items-center gap-12">
-            <div className="flex flex-col items-center">
-              <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Balance</span>
-              <span className="text-lg font-black text-white tracking-tight">{Number(balance).toLocaleString()} <span className="text-[10px] text-slate-500">TKN</span></span>
-            </div>
+          <div className="cyber-header-center">
+            {address && (
+              <div className="cyber-balance-pill">
+                <span className="cyber-balance-label">BALANCE</span>
+                <span className="cyber-balance-val">{Number(balance).toLocaleString()} <span className="cyber-balance-unit">TKN</span></span>
+              </div>
+            )}
             {gameMode && (
               <>
-                <div className="flex flex-col items-center">
-                  <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Bet</span>
-                  <span className="text-lg font-black text-white tracking-tight">{Number(currentBet).toLocaleString()}</span>
+                <div className="cyber-stat-pill">
+                  <span className="cyber-balance-label">BET</span>
+                  <span className="cyber-balance-val">{Number(currentBet).toLocaleString()}</span>
                 </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest mb-0.5">Win</span>
-                  <span className="text-lg font-black text-emerald-400 tracking-tight">{Number(lastWin).toLocaleString()}</span>
+                <div className="cyber-stat-pill">
+                  <span className="cyber-balance-label">WIN</span>
+                  <span className="cyber-balance-val" style={{ color: '#4ade80' }}>{Number(lastWin).toLocaleString()}</span>
                 </div>
               </>
             )}
           </div>
 
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleBuyChipsClick}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[10px] px-5 py-2 rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-emerald-500/20 mr-2"
-            >
-              Buy Chips
-            </button>
-
+          <div className="cyber-header-right">
+            <button onClick={handleBuyChipsClick} className="cyber-buy-chips-btn">BUY CHIPS</button>
             {address ? (
-              <div className="flex items-center gap-3 pl-4 border-l border-white/10 relative">
-                <div className="flex flex-col items-end">
-                  <div className="flex items-center gap-2">
-                    {isAdmin && <span className="text-[8px] bg-red-600 text-white font-black px-1.5 py-0.5 rounded uppercase tracking-tighter">Admin</span>}
-                    <span className="text-xs font-black text-white">{address.slice(0, 6)}...{address.slice(-4)}</span>
-                  </div>
-                  <button onClick={handleLogout} className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors">Disconnect</button>
-                </div>
+              <div style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-inner border border-white/10 transition-all duration-300 hover:scale-105 active:scale-95 ${isAdmin ? 'bg-red-600/20 text-red-500 hover:bg-red-600/30' : 'bg-blue-600/20 text-blue-500 hover:bg-blue-600/30'} cursor-pointer`}
+                  className="cyber-wallet-btn"
                 >
-                  {isAdmin ? '🛡️' : '👤'}
+                  <span className="cyber-wallet-dot"></span>
+                  {address.slice(0, 6)}...{address.slice(-4)}
+                  {isAdmin && <span className="cyber-admin-badge">Admin</span>}
                 </button>
-                {isAdmin && (
-                  <Link to="/admin" className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center transition-all border border-white/5">
-                    ⚙️
-                  </Link>
-                )}
-
-                {/* Profile Menu Dropdown with separate Game History link */}
                 {showProfileMenu && (
-                  <div className="absolute right-0 top-14 w-48 bg-slate-900/95 border border-white/10 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-3 duration-300 backdrop-blur-xl">
-                    <Link
-                      to="/history"
-                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 text-slate-300 hover:text-white transition-all text-xs font-black uppercase tracking-wider cursor-pointer"
-                    >
-                      <span>📜</span> Game History
-                    </Link>
+                  <div className="cyber-dropdown">
+                    <Link to="/history" className="cyber-dropdown-item" onClick={() => setShowProfileMenu(false)}>📜 Game History</Link>
+                    {isAdmin && <Link to="/admin" className="cyber-dropdown-item" onClick={() => setShowProfileMenu(false)}>⚙️ Admin Panel</Link>}
+                    <button onClick={() => { setShowProfileMenu(false); handleLogout(); }} className="cyber-dropdown-item" style={{ color: '#f87171', width: '100%', textAlign: 'left' }}>⏻ Disconnect</button>
                   </div>
                 )}
               </div>
             ) : (
-              <button onClick={connectWallet} className="bg-white text-black font-black text-[10px] px-6 py-2 rounded-xl hover:scale-105 transition-all uppercase tracking-widest">Connect</button>
+              <button onClick={connectWallet} disabled={isConnecting} className="cyber-connect-btn">
+                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+              </button>
             )}
           </div>
         </header>
@@ -463,22 +446,22 @@ function AppContent() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
-                    <h2 className="text-5xl font-black text-white mb-12 tracking-tight">Select Table</h2>
-                    <div className="flex gap-8">
+                  <div className="cyber-lobby">
+                    <h2 className="cyber-lobby-title">Select Table</h2>
+                    <div className="cyber-mode-cards">
                       <ModeCard
                         title="Single Player"
                         desc="Private table. Fast rounds."
-                        icon="🃏"
+                        img={singlePlayerImg}
                         onClick={() => changeGameMode('single')}
-                        color="from-emerald-500 to-teal-700"
+                        accentColor="cyan"
                       />
                       <ModeCard
                         title="Multiplayer"
                         desc="Shared table. Play with others."
-                        icon="👥"
+                        img={multiplayerImg}
                         onClick={() => changeGameMode('multiplayer')}
-                        color="from-amber-500 to-yellow-600"
+                        accentColor="magenta"
                       />
                     </div>
                   </div>
@@ -537,17 +520,21 @@ function App() {
   );
 }
 
-const ModeCard = ({ title, desc, icon, onClick, color }) => (
-  <button
-    onClick={onClick}
-    className={`group relative w-72 h-96 rounded-3xl overflow-hidden p-8 flex flex-col items-center justify-center text-center transition-all duration-500 hover:scale-105 hover:shadow-[0_0_50px_rgba(255,255,255,0.1)] border border-white/10`}
-  >
-    <div className={`absolute inset-0 bg-gradient-to-br ${color} opacity-20 group-hover:opacity-40 transition-opacity`}></div>
-    <span className="text-7xl mb-6 transform group-hover:scale-110 transition-transform duration-500">{icon}</span>
-    <h3 className="text-2xl font-black text-white mb-2">{title}</h3>
-    <p className="text-slate-400 text-sm font-medium">{desc}</p>
-    <div className="mt-8 px-6 py-2 rounded-full border border-white/20 text-white text-xs font-black uppercase tracking-widest group-hover:bg-white group-hover:text-black transition-all">Select</div>
-  </button>
-);
+const ModeCard = ({ title, desc, img, onClick, accentColor }) => {
+  const isCyan = accentColor === 'cyan';
+  return (
+    <button onClick={onClick} className={`cyber-mode-card ${isCyan ? 'cyber-mode-card--cyan' : 'cyber-mode-card--magenta'}`}>
+      <div className="cyber-mode-card-glow"></div>
+      <div className="cyber-mode-card-inner">
+        <div className="cyber-mode-card-img-wrap">
+          <img src={img} alt={title} className="cyber-mode-card-img" />
+        </div>
+        <h3 className={`cyber-mode-card-title ${isCyan ? 'cyber-mode-card-title--cyan' : 'cyber-mode-card-title--magenta'}`}>{title}</h3>
+        <p className="cyber-mode-card-desc">{desc}</p>
+        <div className={`cyber-select-btn ${isCyan ? 'cyber-select-btn--cyan' : 'cyber-select-btn--magenta'}`}>SELECT</div>
+      </div>
+    </button>
+  );
+};
 
 export default App;

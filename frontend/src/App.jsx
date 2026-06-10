@@ -11,6 +11,49 @@ import { getTokenContract, CONTRACT_ADDRESS } from './utils/contract';
 import singlePlayerImg from './assets/single_player_card.png';
 import multiplayerImg from './assets/multiplayer_card.png';
 
+import avatarPlayer from './assets/avatar_player.png';
+import avatarJack from './assets/avatar_jack.png';
+import avatarLady from './assets/avatar_lady.png';
+import avatarGentleman from './assets/avatar_gentleman.png';
+import avatarCyber from './assets/avatar_cyber.png';
+
+const AVATAR_MAP = {
+  avatar_player: avatarPlayer,
+  avatar_jack: avatarJack,
+  avatar_lady: avatarLady,
+  avatar_gentleman: avatarGentleman,
+  avatar_cyber: avatarCyber
+};
+
+const AVATARS = [avatarJack, avatarLady, avatarGentleman, avatarCyber];
+const NICKNAMES = ["Jack", "Sarah", "Victor", "Elena"];
+
+const getPlayerAvatar = (address) => {
+  if (!address) return avatarJack;
+  const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return AVATARS[hash % AVATARS.length];
+};
+
+const getPlayerNickname = (address) => {
+  if (!address) return "Guest";
+  const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return NICKNAMES[hash % NICKNAMES.length];
+};
+
+const getAvatarAsset = (avatarKey, address) => {
+  if (avatarKey && AVATAR_MAP[avatarKey]) {
+    return AVATAR_MAP[avatarKey];
+  }
+  return getPlayerAvatar(address);
+};
+
+const getNicknameToShow = (customName, address) => {
+  if (customName && customName.trim() !== '') {
+    return customName;
+  }
+  return getPlayerNickname(address);
+};
+
 // Helper component to access navigation inside BrowserRouter
 function AppContent() {
   const navigate = useNavigate();
@@ -25,6 +68,11 @@ function AppContent() {
   const [dealerBalance, setDealerBalance] = useState(null);
 
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [customNickname, setCustomNickname] = useState(localStorage.getItem('blackjack_nickname') || '');
+  const [customAvatar, setCustomAvatar] = useState(localStorage.getItem('blackjack_avatar') || 'avatar_player');
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [tempNickname, setTempNickname] = useState('');
+  const [tempAvatar, setTempAvatar] = useState('avatar_player');
 
   // Separate state for Admin
   const [adminAddress, setAdminAddress] = useState(null);
@@ -32,6 +80,59 @@ function AppContent() {
   const [isAdminConnecting, setIsAdminConnecting] = useState(false);
 
   const ADMIN_ADDRESS = "0x2818bA353dFF5CB15310b438f122110d41D7b995".toLowerCase();
+
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
+
+  const syncUserProfile = async (userAddress) => {
+    try {
+      const res = await fetch(`http://${window.location.hostname}:5000/api/user/${userAddress}`);
+      const data = await res.json();
+      if (data && data.username) {
+        setCustomNickname(data.username);
+        setCustomAvatar(data.avatar || 'avatar_player');
+        localStorage.setItem('blackjack_nickname', data.username);
+        localStorage.setItem('blackjack_avatar', data.avatar || 'avatar_player');
+        localStorage.setItem(`profile_setup_${userAddress.toLowerCase()}`, 'true');
+        setNeedsProfileSetup(false);
+      } else {
+        const localName = localStorage.getItem('blackjack_nickname') || '';
+        const localAvatar = localStorage.getItem('blackjack_avatar') || 'avatar_player';
+        const isSetupLocal = localStorage.getItem(`profile_setup_${userAddress.toLowerCase()}`) === 'true';
+        
+        setTempNickname(localName);
+        setTempAvatar(localAvatar);
+
+        if (isSetupLocal && localName) {
+          await fetch(`http://${window.location.hostname}:5000/api/user/${userAddress}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: localName, avatar: localAvatar })
+          });
+          setNeedsProfileSetup(false);
+        } else {
+          setNeedsProfileSetup(true);
+        }
+      }
+    } catch (err) {
+      console.error("Error syncing profile settings:", err);
+      const isSetupLocal = localStorage.getItem(`profile_setup_${userAddress.toLowerCase()}`) === 'true';
+      if (!isSetupLocal) {
+        setNeedsProfileSetup(true);
+      }
+    } finally {
+      setProfileLoaded(true);
+    }
+  };
+
+  useEffect(() => {
+    if (address) {
+      syncUserProfile(address);
+    } else {
+      setNeedsProfileSetup(false);
+      setProfileLoaded(false);
+    }
+  }, [address]);
 
   const changeGameMode = (mode) => {
     setGameMode(mode);
@@ -388,14 +489,31 @@ function AppContent() {
               <div style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="cyber-wallet-btn"
+                  className="cyber-wallet-btn flex items-center gap-2"
                 >
-                  <span className="cyber-wallet-dot"></span>
-                  {address.slice(0, 6)}...{address.slice(-4)}
+                  <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
+                    <img src={getAvatarAsset(customAvatar, address)} className="w-full h-full object-cover" alt="Avatar" />
+                  </div>
+                  <span>{address.slice(0, 6)}...{address.slice(-4)}</span>
                   {isAdmin && <span className="cyber-admin-badge">Admin</span>}
                 </button>
                 {showProfileMenu && (
                   <div className="cyber-dropdown">
+                    <div className="px-4 py-2 border-b border-white/5 mb-1 text-xs text-slate-500 uppercase tracking-widest font-bold">
+                      {getNicknameToShow(customNickname, address)}
+                    </div>
+                    <button 
+                      onClick={() => { 
+                        setShowProfileMenu(false); 
+                        setTempNickname(customNickname);
+                        setTempAvatar(customAvatar);
+                        setShowSettingsModal(true); 
+                      }} 
+                      className="cyber-dropdown-item" 
+                      style={{ width: '100%', textAlign: 'left' }}
+                    >
+                      👤 Profile Settings
+                    </button>
                     <Link to="/history" className="cyber-dropdown-item" onClick={() => setShowProfileMenu(false)}>📜 Game History</Link>
                     {isAdmin && <Link to="/admin" className="cyber-dropdown-item" onClick={() => setShowProfileMenu(false)}>⚙️ Admin Panel</Link>}
                     <button onClick={() => { setShowProfileMenu(false); handleLogout(); }} className="cyber-dropdown-item" style={{ color: '#f87171', width: '100%', textAlign: 'left' }}>⏻ Disconnect</button>
@@ -431,6 +549,77 @@ function AppContent() {
                     ) : (
                       <>CONNECT WALLET</>
                     )}
+                  </button>
+                </div>
+              ) : needsProfileSetup ? (
+                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500 max-w-md w-full bg-slate-950/80 backdrop-blur-xl p-10 rounded-[40px] border border-amber-500/30 shadow-[0_0_50px_rgba(245,158,11,0.15)]">
+                  <h2 className="text-3xl font-black text-amber-500 mb-2 text-center uppercase tracking-wider">Profile Setup</h2>
+                  <p className="text-slate-400 text-center text-sm mb-8 leading-relaxed">Choose an avatar and username to represent yourself at the tables.</p>
+                  
+                  {/* Avatar Picker */}
+                  <div className="w-full mb-8">
+                    <label className="block text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 text-left">Choose Avatar</label>
+                    <div className="grid grid-cols-5 gap-2.5">
+                      {Object.keys(AVATAR_MAP).map((key) => (
+                        <div
+                          key={key}
+                          onClick={() => setTempAvatar(key)}
+                          className={`aspect-square rounded-full overflow-hidden cursor-pointer border-2 transition-all relative ${tempAvatar === key ? 'border-amber-500 scale-105 shadow-[0_0_15px_rgba(245,158,11,0.4)]' : 'border-slate-800 hover:border-slate-600'}`}
+                        >
+                          <img src={AVATAR_MAP[key]} className="w-full h-full object-cover" alt={key} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Nickname Input */}
+                  <div className="w-full mb-8">
+                    <label className="block text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 text-left">Username</label>
+                    <input
+                      type="text"
+                      value={tempNickname}
+                      onChange={(e) => setTempNickname(e.target.value)}
+                      maxLength={12}
+                      placeholder="Enter Username"
+                      className="w-full bg-slate-900 border border-slate-800 focus:border-amber-500 rounded-xl px-4 py-3 text-white font-bold placeholder-slate-600 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    onClick={async () => {
+                      const nameToSave = tempNickname.trim();
+                      if (!nameToSave) {
+                        toast.error("Please enter a username!");
+                        return;
+                      }
+                      
+                      try {
+                        const res = await fetch(`http://${window.location.hostname}:5000/api/user/${address}`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ username: nameToSave, avatar: tempAvatar })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          setCustomNickname(nameToSave);
+                          setCustomAvatar(tempAvatar);
+                          localStorage.setItem('blackjack_nickname', nameToSave);
+                          localStorage.setItem('blackjack_avatar', tempAvatar);
+                          localStorage.setItem(`profile_setup_${address.toLowerCase()}`, 'true');
+                          setNeedsProfileSetup(false);
+                          toast.success("Profile created successfully!");
+                        } else {
+                          toast.error("Failed to save profile. Please try again.");
+                        }
+                      } catch (err) {
+                        console.error(err);
+                        toast.error("Network error. Please try again.");
+                      }
+                    }}
+                    className="w-full py-4 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black uppercase tracking-wider rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition-all"
+                  >
+                    Save & Continue
                   </button>
                 </div>
               ) : !gameMode ? (
@@ -478,17 +667,43 @@ function AppContent() {
                     <BlackjackWeb2
                       authData={authData}
                       gameMode={gameMode}
+                      balance={balance}
                       setBalance={setBalance}
                       setCurrentBet={setCurrentBet}
                       setLastWin={setLastWin}
+                      customNickname={customNickname}
+                      customAvatar={customAvatar}
+                      onOpenSettings={() => {
+                        setTempNickname(customNickname);
+                        setTempAvatar(customAvatar);
+                        setShowSettingsModal(true);
+                      }}
                     />
                   ) : (
                     <BlackjackMultiplayer
                       authData={authData}
                       gameMode={gameMode}
+                      balance={balance}
                       setBalance={setBalance}
                       setCurrentBet={setCurrentBet}
                       setLastWin={setLastWin}
+                      customNickname={customNickname}
+                      customAvatar={customAvatar}
+                      onOpenSettings={() => {
+                        setTempNickname(customNickname);
+                        setTempAvatar(customAvatar);
+                        setShowSettingsModal(true);
+                      }}
+                      onSyncSettings={(nickname, avatar) => {
+                        if (nickname) {
+                          setCustomNickname(nickname);
+                          localStorage.setItem('blackjack_nickname', nickname);
+                        }
+                        if (avatar) {
+                          setCustomAvatar(avatar);
+                          localStorage.setItem('blackjack_avatar', avatar);
+                        }
+                      }}
                     />
                   )}
                 </div>
@@ -508,6 +723,63 @@ function AppContent() {
           <Route path="/history" element={<PlayerHistoryPage address={address} />} />
         </Routes>
       </main>
+
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-950 border border-slate-800 rounded-[30px] p-8 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 text-left">
+            <button
+              onClick={() => setShowSettingsModal(false)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-white text-xl transition-all"
+            >
+              ✕
+            </button>
+            <h3 className="text-xl font-black text-amber-500 uppercase tracking-wider mb-6">Profile Settings</h3>
+            
+            <div className="mb-6">
+              <label className="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Nickname</label>
+              <input
+                type="text"
+                value={tempNickname}
+                onChange={(e) => setTempNickname(e.target.value)}
+                maxLength={12}
+                placeholder={getPlayerNickname(address)}
+                className="w-full bg-slate-900 border border-slate-800 focus:border-amber-500 rounded-xl px-4 py-2.5 text-white font-bold placeholder-slate-600 outline-none transition-all"
+              />
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Choose Avatar</label>
+              <div className="grid grid-cols-5 gap-2.5">
+                {Object.keys(AVATAR_MAP).map((key) => (
+                  <div
+                    key={key}
+                    onClick={() => setTempAvatar(key)}
+                    className={`aspect-square rounded-full overflow-hidden cursor-pointer border-2 transition-all relative ${tempAvatar === key ? 'border-amber-500 scale-105 shadow-[0_0_15px_rgba(245,158,11,0.4)]' : 'border-slate-800 hover:border-slate-600'}`}
+                  >
+                    <img src={AVATAR_MAP[key]} className="w-full h-full object-cover" alt={key} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                const nameToSave = tempNickname.trim();
+                localStorage.setItem('blackjack_nickname', nameToSave);
+                localStorage.setItem('blackjack_avatar', tempAvatar);
+                setCustomNickname(nameToSave);
+                setCustomAvatar(tempAvatar);
+                setShowSettingsModal(false);
+                toast.success("Profile updated successfully!");
+              }}
+              className="w-full py-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black uppercase tracking-wider rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

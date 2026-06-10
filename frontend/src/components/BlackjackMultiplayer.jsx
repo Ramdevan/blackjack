@@ -4,6 +4,50 @@ import { io } from 'socket.io-client';
 import { getContract, getTokenContract, CONTRACT_ADDRESS } from '../utils/contract';
 import toast from 'react-hot-toast';
 
+// Custom Avatars
+import avatarPlayer from '../assets/avatar_player.png';
+import avatarJack from '../assets/avatar_jack.png';
+import avatarLady from '../assets/avatar_lady.png';
+import avatarGentleman from '../assets/avatar_gentleman.png';
+import avatarCyber from '../assets/avatar_cyber.png';
+
+const AVATARS = [avatarJack, avatarLady, avatarGentleman, avatarCyber];
+const NICKNAMES = ["Jack", "Sarah", "Victor", "Elena"];
+
+const AVATAR_MAP = {
+  avatar_player: avatarPlayer,
+  avatar_jack: avatarJack,
+  avatar_lady: avatarLady,
+  avatar_gentleman: avatarGentleman,
+  avatar_cyber: avatarCyber
+};
+
+const getPlayerAvatar = (address) => {
+  if (!address) return avatarJack;
+  const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return AVATARS[hash % AVATARS.length];
+};
+
+const getPlayerNickname = (address) => {
+  if (!address) return "Guest";
+  const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return NICKNAMES[hash % NICKNAMES.length];
+};
+
+const getAvatarAsset = (avatarKey, address) => {
+  if (avatarKey && AVATAR_MAP[avatarKey]) {
+    return AVATAR_MAP[avatarKey];
+  }
+  return getPlayerAvatar(address);
+};
+
+const getNicknameToShow = (customName, address) => {
+  if (customName && customName.trim() !== '') {
+    return customName;
+  }
+  return getPlayerNickname(address);
+};
+
 const CHIPS = [
   { value: 10, label: '10', className: 'chip-10' },
   { value: 25, label: '25', className: 'chip-25' },
@@ -12,7 +56,7 @@ const CHIPS = [
   { value: 250, label: '250', className: 'chip-250' },
 ];
 
-export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, authData, gameMode }) => {
+export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLastWin, authData, gameMode, customNickname, customAvatar, onOpenSettings, onSyncSettings }) => {
   const [betAmount, setBetAmount] = useState(0);
   const [selectedChip, setSelectedChip] = useState(null);
   const [gameId, setGameId] = useState(null);
@@ -42,6 +86,8 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
   // Multiplayer Connection States
   const [socket, setSocket] = useState(null);
   const [otherPlayers, setOtherPlayers] = useState([]);
+  
+
 
   // Sequential Multiplayer Turn States
   const [tableState, setTableState] = useState('betting');
@@ -176,7 +222,17 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
     setSocket(newSocket);
 
     newSocket.on('connect', () => {
-      newSocket.emit('join-table', { address: authData.address });
+      newSocket.emit('join-table', { 
+        address: authData.address,
+        nickname: customNickname || '',
+        avatar: customAvatar || 'avatar_player'
+      });
+    });
+
+    newSocket.on('settings-synced', ({ nickname, avatar }) => {
+      if (onSyncSettings) {
+        onSyncSettings(nickname, avatar);
+      }
     });
 
     newSocket.on('table-full', (data) => {
@@ -266,6 +322,54 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
       newSocket.disconnect();
     };
   }, [authData.address]);
+
+  // Synchronize player settings changes across socket connections in real-time
+  useEffect(() => {
+    if (socket && authData?.address) {
+      socket.emit('update-settings', {
+        address: authData.address,
+        nickname: customNickname || '',
+        avatar: customAvatar || 'avatar_player'
+      });
+    }
+  }, [customNickname, customAvatar, socket, authData?.address]);
+
+  // Fetch other players' correct token balances from the contract when otherPlayers list changes
+  useEffect(() => {
+    if (!tokenContract || !otherPlayers || otherPlayers.length === 0) return;
+
+    // To prevent infinite loop, only fetch if any player does not have a balance set
+    const needsUpdate = otherPlayers.some(p => p.balance === undefined);
+    if (!needsUpdate) return;
+
+    const fetchBalances = async () => {
+      try {
+        const updated = await Promise.all(
+          otherPlayers.map(async (p) => {
+            if (p.balance !== undefined) return p;
+            try {
+              const balRaw = await tokenContract.balanceOf(p.address);
+              const formatted = ethers.formatUnits(balRaw, tokenDecimals);
+              return { ...p, balance: formatted };
+            } catch (err) {
+              console.error("Error fetching balance for address:", p.address, err);
+              return { ...p, balance: "0" };
+            }
+          })
+        );
+        // Only set if changed
+        const hashBefore = otherPlayers.map(op => `${op.address}:${op.balance}`).join('|');
+        const hashAfter = updated.map(op => `${op.address}:${op.balance}`).join('|');
+        if (hashBefore !== hashAfter) {
+          setOtherPlayers(updated);
+        }
+      } catch (e) {
+        console.error("Failed to fetch other players' balances:", e);
+      }
+    };
+
+    fetchBalances();
+  }, [otherPlayers, tokenContract, tokenDecimals]);
 
   // Handle transition when the table state transitions to settled
   useEffect(() => {
@@ -796,8 +900,21 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 statusText = socketStatus;
               }
 
+              let otherBalance = p.balance;
+              const activeTk = tokenContractRef.current || tokenContract;
+              if (activeTk) {
+                try {
+                  const balRaw = await activeTk.balanceOf(p.address);
+                  otherBalance = ethers.formatUnits(balRaw, tokenDecimals);
+                } catch (balErr) {
+                  console.error("Error fetching other player balance:", balErr);
+                }
+              }
+
               return {
                 ...p,
+                nickname: p.nickname || '',
+                avatar: p.avatar || '',
                 cards,
                 score,
                 bet: Number(ethers.formatUnits(details.betAmount, 18)),
@@ -805,7 +922,8 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 isSplit: otherIsSplit,
                 cardsLeft: otherCardsLeft,
                 cardsRight: otherCardsRight,
-                activeHandIndex: otherActiveHandIndex
+                activeHandIndex: otherActiveHandIndex,
+                balance: otherBalance
               };
             } catch (e) {
               return p;
@@ -1451,17 +1569,28 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
 
   const renderOtherPlayerSeat = (idx, seatLabel, translationClass) => {
     const player = otherPlayers[idx];
+    const isPlayerActive = player && player.status && player.status.toLowerCase().includes('playing');
+    const playerAvatar = player ? getAvatarAsset(player.avatar, player.address) : null;
+    const playerNickname = player ? getNicknameToShow(player.nickname, player.address) : "";
+    const realBalance = player && player.balance ? player.balance : "0";
+
     return (
       <div className={`w-[180px] min-h-[220px] flex flex-col items-center justify-center transition-all duration-500 ${translationClass}`}>
         {player ? (
-          <div className="flex flex-col items-center p-3 bg-slate-900/60 border border-slate-800 rounded-2xl w-full shadow-lg relative animate-in fade-in duration-500 hover:bg-slate-900/80 hover:border-slate-700 transition-colors">
-            <span className="text-[10px] font-black text-slate-400 tracking-tight mb-1.5">
-              {player.address.slice(0, 6)}...{player.address.slice(-4)}
-            </span>
-            <span className={`text-[8px] uppercase font-black px-2 py-0.5 rounded border mb-3 ${player.status.includes('Winner') || player.status.includes('Blackjack') ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
-                player.status.includes('Lost') || player.status.includes('Bust') ? 'bg-red-500/10 border-red-500/30 text-red-400' :
-                  'bg-slate-800 border-slate-750 text-slate-400'
-              }`}>{player.status}</span>
+          <div className="flex flex-col items-center w-full relative animate-in fade-in duration-500">
+            {/* Avatar Ring */}
+            <div className={`avatar-ring-silver ${isPlayerActive ? 'avatar-active-glow' : ''} mb-3`}>
+              <img src={playerAvatar} className="w-full h-full object-cover" alt={playerNickname} />
+            </div>
+
+            {/* Name & Balance Tag */}
+            <div className="player-tag-container mb-4">
+              <div className="player-name-badge">{playerNickname}</div>
+              <div className="player-balance-badge">
+                <div className="player-coin-icon">$</div>
+                {Number(realBalance).toLocaleString()}
+              </div>
+            </div>
 
             {/* Compact hand rendering */}
             <div className="flex flex-col items-center gap-1.5 w-full mb-3">
@@ -1474,7 +1603,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                         {player.cardsLeft && player.cardsLeft.map((c, idx) => (
                           <div key={idx} className="transform transition-transform" style={{ marginLeft: idx > 0 ? '-25px' : '0', zIndex: idx }}>
                             <div className="scale-75 origin-top-left">
-                              <Web2Card suit={c.suit} value={c.value} />
+                              <Web2Card suit={c.suit} value={c.value} tiltClass={idx % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
                             </div>
                           </div>
                         ))}
@@ -1488,7 +1617,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                         {player.cardsRight && player.cardsRight.map((c, idx) => (
                           <div key={idx} className="transform transition-transform" style={{ marginLeft: idx > 0 ? '-25px' : '0', zIndex: idx }}>
                             <div className="scale-75 origin-top-left">
-                              <Web2Card suit={c.suit} value={c.value} />
+                              <Web2Card suit={c.suit} value={c.value} tiltClass={idx % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
                             </div>
                           </div>
                         ))}
@@ -1500,8 +1629,8 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                 <div className="flex justify-center min-h-[85px] relative w-full scale-90">
                   <div className="flex">
                     {status !== 'betting' && player.cards && player.cards.map((c, i) => (
-                      <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-50px' : '0', zIndex: i }}>
-                        <Web2Card suit={c.suit} value={c.value} />
+                      <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-45px' : '0', zIndex: i }}>
+                        <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
                       </div>
                     ))}
                   </div>
@@ -1509,10 +1638,20 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
               )}
             </div>
 
+            {/* Bet Capsule */}
             {player.bet > 0 && (
-              <div className="text-[10px] font-bold text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">
-                Bet: {player.bet} chips
+              <div className="bet-capsule absolute top-[40px] right-[-10px] animate-in zoom-in-50 duration-300">
+                <div className="bet-chip-icon"></div>
+                <span className="bet-capsule-text">${player.bet >= 1000 ? `${(player.bet / 1000).toFixed(0)}k` : player.bet}</span>
               </div>
+            )}
+            
+            {/* Status indicator (if not playing) */}
+            {!isPlayerActive && (
+              <span className={`absolute top-0 right-0 text-[8px] uppercase font-black px-2 py-0.5 rounded border ${player.status.includes('Winner') || player.status.includes('Blackjack') ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                  player.status.includes('Lost') || player.status.includes('Bust') ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                    'bg-slate-800 border-slate-750 text-slate-400'
+                }`}>{player.status}</span>
             )}
           </div>
         ) : (
@@ -1537,8 +1676,12 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         <div className="flex justify-center relative min-h-[120px]">
           <div className="flex">
             {status !== 'betting' && dealerHand.map((c, i) => (
-              <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-50px' : '0', zIndex: i }}>
-                {c.hidden ? <div className="playing-card card-hidden"></div> : <Web2Card suit={c.suit} value={c.value} />}
+              <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-45px' : '0', zIndex: i }}>
+                {c.hidden ? (
+                  <div className="classic-playing-card card-hidden classic-card-tilt-right"></div>
+                ) : (
+                  <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
+                )}
               </div>
             ))}
           </div>
@@ -1600,7 +1743,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
         {renderOtherPlayerSeat(1, "Empty Seat (Mid Left)", "lg:-translate-y-4")}
 
         {/* Seat 3: Center (YOU) */}
-        <div className="w-[200px] lg:w-[220px] flex flex-col items-center px-2 lg:translate-y-2">
+        <div className="w-[200px] lg:w-[220px] flex flex-col items-center px-2 lg:translate-y-2 relative">
           {isSplit ? (
             <div className="flex flex-col md:flex-row justify-center gap-4 scale-95 origin-center">
               {/* Left Hand */}
@@ -1612,7 +1755,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                   <div className="flex">
                     {playerHandLeft.map((c, i) => (
                       <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
-                        <Web2Card suit={c.suit} value={c.value} />
+                        <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
                       </div>
                     ))}
                   </div>
@@ -1643,7 +1786,7 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
                   <div className="flex">
                     {playerHandRight.map((c, i) => (
                       <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
-                        <Web2Card suit={c.suit} value={c.value} />
+                        <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
                       </div>
                     ))}
                   </div>
@@ -1669,8 +1812,8 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             <div className="flex flex-col items-center">
               <div className="flex min-h-[120px] mb-4">
                 {playerHand.map((c, i) => (
-                  <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-50px' : '0', zIndex: i }}>
-                    <Web2Card suit={c.suit} value={c.value} />
+                  <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-45px' : '0', zIndex: i }}>
+                    <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
                   </div>
                 ))}
               </div>
@@ -1680,9 +1823,34 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             </div>
           )}
 
-          <div className="px-4 py-1.5 mt-4 bg-blue-500/10 border border-blue-500/20 rounded-xl text-white font-black text-xs shadow-lg tracking-wider whitespace-nowrap">
-            👤 YOU ({authData.address.slice(0, 6)}...{authData.address.slice(-4)})
+          {/* Avatar Ring */}
+          <div className={`avatar-ring-gold ${isMyTurn && status === 'playing' ? 'avatar-active-glow' : ''} mb-2 shadow-2xl relative group`}>
+            <img src={getAvatarAsset(customAvatar, authData.address)} className="w-full h-full object-cover" alt="Player Avatar" />
+            <button 
+              onClick={onOpenSettings}
+              className="absolute -bottom-1 -right-1 bg-black/80 hover:bg-black border border-white/20 text-white rounded-full p-1.5 text-[10px] shadow-lg transition-transform hover:scale-110 active:scale-95"
+              title="Edit Profile"
+            >
+              ⚙️
+            </button>
           </div>
+
+          {/* Name & Balance Tag */}
+          <div className="player-tag-container mt-1">
+            <div className="player-name-badge player-name-badge--you">{getNicknameToShow(customNickname, authData.address)}</div>
+            <div className="player-balance-badge player-balance-badge--you">
+              <div className="player-coin-icon">$</div>
+              {Number(balance).toLocaleString()}
+            </div>
+          </div>
+
+          {/* Bet Capsule */}
+          {betAmount > 0 && (
+            <div className="bet-capsule absolute top-[40px] right-[-15px] animate-in zoom-in-50 duration-300">
+              <div className="bet-chip-icon"></div>
+              <span className="bet-capsule-text">${betAmount >= 1000 ? `${(betAmount / 1000).toFixed(0)}k` : betAmount}</span>
+            </div>
+          )}
         </div>
 
         {/* Seat 4: Mid Right (Other Player 3) */}
@@ -1812,36 +1980,43 @@ export const BlackjackMultiplayer = ({ setBalance, setCurrentBet, setLastWin, au
             </div>
           </div>
         )}
-      </div>
-
     </div>
+  </div>
   );
 };
 
-const Web2Card = ({ suit, value }) => {
+const Web2Card = ({ suit, value, tiltClass = '' }) => {
   const isRed = suit === '♥' || suit === '♦';
   return (
-    <div className={`playing-card overflow-hidden shadow-2xl ${isRed ? 'card-red' : 'text-slate-900'}`}>
-      <div className="absolute top-1 left-2 flex flex-col items-center leading-none">
-        <span className="text-xl font-black">{value}</span>
-        <span className="text-xl mt-[-2px]">{suit}</span>
+    <div className={`classic-playing-card ${tiltClass} ${isRed ? 'text-red-600' : 'text-slate-900'}`}>
+      <div className="flex justify-between w-full">
+        <span className="card-suit-text">{value}</span>
+        <span className="card-suit-text">{suit}</span>
       </div>
-      <div className="absolute inset-0 flex items-center justify-center opacity-[0.1] pointer-events-none">
-        <span className="text-7xl">{suit}</span>
+      <div className="card-center-suit">
+        {suit}
       </div>
-      <div className="absolute bottom-1 right-2 flex flex-col items-center leading-none rotate-180">
-        <span className="text-xl font-black">{value}</span>
-        <span className="text-xl mt-[-2px]">{suit}</span>
+      <div className="flex justify-between w-full rotate-180">
+        <span className="card-suit-text">{value}</span>
+        <span className="card-suit-text">{suit}</span>
       </div>
     </div>
   );
 };
 
-const ActionBtn = ({ icon, label, onClick, disabled }) => (
-  <div className={`action-btn-wrapper transition-all duration-300 ${disabled ? 'opacity-30 grayscale pointer-events-none' : 'hover:scale-110'}`}>
-    <button className="action-btn" onClick={onClick} disabled={disabled}>
-      {icon}
+const ActionBtn = ({ label, onClick, disabled }) => {
+  let text = label;
+  if (label.toLowerCase() === 'stand') text = 'STAND';
+  if (label.toLowerCase() === 'double down') text = 'DOUBLE';
+  text = text.toUpperCase();
+
+  return (
+    <button
+      className="action-btn-pill"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {text}
     </button>
-    <span className="action-label">{label}</span>
-  </div>
-);
+  );
+};

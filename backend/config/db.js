@@ -39,9 +39,56 @@ export async function initDB() {
       CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
         wallet_address VARCHAR(255) UNIQUE,
+        username VARCHAR(255) DEFAULT NULL,
+        avatar VARCHAR(255) DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Add username column to users if it does not exist
+    try {
+      const [columns] = await pool.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'username'
+      `, [dbName]);
+      if (columns.length === 0) {
+        await pool.query("ALTER TABLE users ADD COLUMN username VARCHAR(255) DEFAULT NULL;");
+        console.log('Database: Added username column to users table');
+      }
+    } catch (colErr) {
+      console.error('Error adding username column:', colErr);
+    }
+
+    // Add avatar column to users if it does not exist
+    try {
+      const [columns] = await pool.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'avatar'
+      `, [dbName]);
+      if (columns.length === 0) {
+        await pool.query("ALTER TABLE users ADD COLUMN avatar VARCHAR(255) DEFAULT NULL;");
+        console.log('Database: Added avatar column to users table');
+      }
+    } catch (colErr) {
+      console.error('Error adding avatar column:', colErr);
+    }
+
+    // Drop obsolete name column from users if it exists
+    try {
+      const [columns] = await pool.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'name'
+      `, [dbName]);
+      if (columns.length > 0) {
+        await pool.query("ALTER TABLE users DROP COLUMN name;");
+        console.log('Database: Removed obsolete name column from users table');
+      }
+    } catch (colErr) {
+      console.error('Error dropping obsolete name column:', colErr);
+    }
 
     // Create wallets table
     await pool.query(`

@@ -23,6 +23,49 @@ app.use(express.json());
 app.use('/api/admin', adminRoutes);
 app.use('/api/token', tokenRoutes);
 
+// Get user profile settings
+app.get('/api/user/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const pool = getPool();
+    const [rows] = await pool.query('SELECT username, avatar FROM users WHERE wallet_address = ?', [address]);
+    if (rows.length > 0) {
+      return res.json({ username: rows[0].username, avatar: rows[0].avatar });
+    } else {
+      return res.json({ username: null, avatar: null });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Update user profile settings
+app.post('/api/user/:address', async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { username, avatar } = req.body;
+    const pool = getPool();
+    
+    const [rows] = await pool.query('SELECT id FROM users WHERE wallet_address = ?', [address]);
+    if (rows.length === 0) {
+      const [insertResult] = await pool.query('INSERT INTO users (wallet_address, username, avatar) VALUES (?, ?, ?)', [address, username || null, avatar || null]);
+      const userId = insertResult.insertId;
+      try {
+        await pool.query('INSERT INTO wallets (user_id, balance) VALUES (?, 0) ON DUPLICATE KEY UPDATE user_id=user_id', [userId]);
+      } catch (wErr) {
+        console.error(wErr);
+      }
+    } else {
+      await pool.query('UPDATE users SET username = ?, avatar = ? WHERE wallet_address = ?', [username || null, avatar || null, address]);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 initDB().then(async () => {
   console.log('Database initialized');
   await loadPersistentMultiplayerTables();
@@ -292,9 +335,43 @@ const connectedPlayers = new Map(); // socketId -> playerDetails
 io.on('connection', (socket) => {
   console.log(`User connected to socket relay: ${socket.id}`);
 
-  socket.on('join-table', ({ address }) => {
+  socket.on('join-table', async ({ address, nickname, avatar }) => {
     if (!address) return;
-    console.log(`Player ${address} joined table on socket ${socket.id}`);
+    
+    // Fetch or create user in DB, and use database values if already set
+    let dbNickname = nickname;
+    let dbAvatar = avatar;
+    try {
+      const pool = getPool();
+      const [rows] = await pool.query('SELECT username, avatar FROM users WHERE wallet_address = ?', [address]);
+      if (rows.length === 0) {
+        await pool.query('INSERT INTO users (wallet_address, username, avatar) VALUES (?, ?, ?)', [address, nickname || null, avatar || null]);
+        try {
+          const [userRows] = await pool.query('SELECT id FROM users WHERE wallet_address = ?', [address]);
+          if (userRows.length > 0) {
+            await pool.query('INSERT INTO wallets (user_id, balance) VALUES (?, 0) ON DUPLICATE KEY UPDATE user_id=user_id', [userRows[0].id]);
+          }
+        } catch (walletErr) {
+          console.error('Error auto-creating wallet:', walletErr);
+        }
+      } else {
+        dbNickname = rows[0].username || nickname;
+        dbAvatar = rows[0].avatar || avatar;
+        if ((nickname && nickname !== rows[0].username) || (avatar && avatar !== rows[0].avatar)) {
+          await pool.query('UPDATE users SET username = ?, avatar = ? WHERE wallet_address = ?', [nickname || dbNickname, avatar || dbAvatar, address]);
+          dbNickname = nickname || dbNickname;
+          dbAvatar = avatar || dbAvatar;
+        }
+      }
+    } catch (dbErr) {
+      console.error('Error synchronizing user settings on join:', dbErr);
+    }
+
+    nickname = dbNickname || nickname;
+    avatar = dbAvatar || avatar;
+
+    console.log(`Player ${address} joined table on socket ${socket.id} (Name: ${nickname}, Avatar: ${avatar})`);
+    socket.emit('settings-synced', { nickname, avatar });
 
     // Check if this player already exists in our connected players list (by address)
     let existingPlayer = null;
@@ -314,6 +391,8 @@ io.on('connection', (socket) => {
     connectedPlayers.set(socket.id, {
       socketId: socket.id,
       address: address,
+      nickname: nickname || (existingPlayer ? existingPlayer.nickname : ''),
+      avatar: avatar || (existingPlayer ? existingPlayer.avatar : ''),
       bet: existingPlayer ? existingPlayer.bet : 0,
       cards: existingPlayer ? existingPlayer.cards : [],
       score: existingPlayer ? existingPlayer.score : 0,
@@ -324,6 +403,25 @@ io.on('connection', (socket) => {
     });
 
     broadcastTableState();
+  });
+
+  socket.on('update-settings', async ({ address, nickname, avatar }) => {
+    const player = connectedPlayers.get(socket.id);
+    if (player && player.address.toLowerCase() === address.toLowerCase()) {
+      player.nickname = nickname;
+      player.avatar = avatar;
+      console.log(`Player ${address} updated settings: Name=${nickname}, Avatar=${avatar}`);
+      
+      try {
+        const pool = getPool();
+        await pool.query('UPDATE users SET username = ?, avatar = ? WHERE wallet_address = ?', [nickname, avatar, address]);
+        console.log(`Database: Updated settings for player ${address}`);
+      } catch (dbErr) {
+        console.error('Error updating player settings in database:', dbErr);
+      }
+      
+      broadcastTableState();
+    }
   });
 
   socket.on('set-table-id', async ({ tableId }) => {

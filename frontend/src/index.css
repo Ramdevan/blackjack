@@ -1085,19 +1085,93 @@ body::before {
 }
 
 
-/* Gold Embossed Felt Print Graphics */
+/* ---- Premium Casino Table UI (Matches Reference Image) ---- */
+.premium-table-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  background-color: #050505; /* Dark floor background */
+}
+
+.premium-table-rim {
+  width: 140vw;
+  height: 120vh;
+  /* Dark gunmetal / metallic rim */
+  background: linear-gradient(180deg, #161b22 0%, #080a0f 100%);
+  border-top-left-radius: 50% 100%;
+  border-top-right-radius: 50% 100%;
+  position: absolute;
+  bottom: -40vh;
+  box-shadow: 
+    inset 0 30px 60px rgba(0,0,0,0.9), 
+    0 0 100px rgba(0,0,0,1),
+    0 -2px 15px rgba(0, 229, 255, 0.2);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 55px;
+}
+
+/* Neon strip lighting at the bottom edge of the table */
+.premium-table-rim::after {
+  content: '';
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, #00e5ff, #bd00ff, #00e5ff, transparent);
+  box-shadow: 0 -5px 15px rgba(0, 229, 255, 0.6), 0 -10px 30px rgba(189, 0, 255, 0.4);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.premium-table-felt {
+  width: 135vw;
+  height: 115vh;
+  /* Matte slate/navy blue gradient */
+  background: radial-gradient(circle at 50% 30%, #1f405f 0%, #142d45 60%, #091624 100%);
+  border-top-left-radius: 50% 100%;
+  border-top-right-radius: 50% 100%;
+  box-shadow: inset 0 40px 80px rgba(31, 143, 192, 0.9);
+  position: relative;
+  animation: table-glow-pulse 4s infinite ease-in-out;
+  /* Realistic heavy felt fabric texture overlay (no tech grid) */
+  /* background-image: 
+    radial-gradient(circle at 50% 30%, rgba(90, 33, 125, 0.95) 100%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E"); */
+}
+
+@keyframes table-glow-pulse {
+  0% {
+    box-shadow: inset 0 30px 60px rgba(31, 143, 192, 0.6);
+  }
+  50% {
+    box-shadow: inset 0 60px 120px rgba(31, 143, 192, 1);
+  }
+  100% {
+    box-shadow: inset 0 30px 60px rgba(31, 143, 192, 0.6);
+  }
+}
+
+/* Adjust the felt print graphics to position elegantly along the curve */
 .table-felt-print {
   position: absolute;
   top: 15%;
   left: 50%;
   transform: translateX(-50%);
-  width: 80%;
-  max-width: 900px;
-  height: 450px;
-  border: 2.5px solid rgba(217, 119, 6, 0.12);
+  width: 65vw;
+  max-width: 950px;
+  height: 35vh;
+  border: 2px solid rgba(255, 255, 255, 0.15);
   border-bottom: none;
-  border-top-left-radius: 450px;
-  border-top-right-radius: 450px;
+  border-top-left-radius: 50% 100%;
+  border-top-right-radius: 50% 100%;
   pointer-events: none;
   z-index: 0;
   display: flex;
@@ -1109,21 +1183,21 @@ body::before {
 
 .table-felt-text-1 {
   font-family: 'Playfair Display', serif;
-  font-size: 26px;
-  font-weight: 800;
+  font-size: 32px;
+  font-weight: 900;
   letter-spacing: 5px;
-  color: rgba(217, 119, 6, 0.35);
-  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+  color: rgba(255, 255, 255, 0.65);
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.6);
   text-transform: uppercase;
   margin-bottom: 8px;
 }
 
 .table-felt-text-2 {
   font-family: 'Outfit', sans-serif;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 800;
-  letter-spacing: 2px;
-  color: rgba(255, 255, 255, 0.22);
+  letter-spacing: 4px;
+  color: rgba(255, 255, 255, 0.45);
   text-transform: uppercase;
 }
 

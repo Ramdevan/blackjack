@@ -441,8 +441,20 @@ function AppContent() {
 
   return (
     <div className="min-h-screen relative flex flex-col items-center overflow-x-hidden w-full">
-      <div className="cyber-bg-cards"></div>
-      {location.pathname !== '/admin' && <div className="cyber-table-bottom"></div>}
+      {/* Dynamic Backgrounds based on Game State */}
+      {location.pathname !== '/admin' && gameMode ? (
+        <div className="premium-table-container">
+          <div className="premium-table-rim">
+            <div className="premium-table-felt">
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="cyber-bg-cards"></div>
+          {location.pathname !== '/admin' && <div className="cyber-table-bottom"></div>}
+        </>
+      )}
 
       <Toaster
         position="top-right"

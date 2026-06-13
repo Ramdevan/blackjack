@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { ethers } from 'ethers';
 import toast, { Toaster } from 'react-hot-toast';
@@ -68,6 +68,22 @@ function AppContent() {
   const [dealerBalance, setDealerBalance] = useState(null);
 
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setShowProfileMenu(false);
+      }
+    };
+
+    if (showProfileMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showProfileMenu]);
   const [customNickname, setCustomNickname] = useState(localStorage.getItem('blackjack_nickname') || '');
   const [customAvatar, setCustomAvatar] = useState(localStorage.getItem('blackjack_avatar') || 'avatar_player');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -442,19 +458,10 @@ function AppContent() {
   return (
     <div className="min-h-screen relative flex flex-col items-center overflow-x-hidden w-full">
       {/* Dynamic Backgrounds based on Game State */}
-      {location.pathname !== '/admin' && gameMode ? (
-        <div className="premium-table-container">
-          <div className="premium-table-rim">
-            <div className="premium-table-felt">
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="cyber-bg-cards"></div>
-          {location.pathname !== '/admin' && <div className="cyber-table-bottom"></div>}
-        </>
-      )}
+      <>
+        <div className="cyber-bg-cards"></div>
+        {location.pathname !== '/admin' && <div className="cyber-table-bottom"></div>}
+      </>
 
       <Toaster
         position="top-right"
@@ -472,43 +479,97 @@ function AppContent() {
 
       {location.pathname !== '/admin' && (
         <header className="cyber-header">
-          <Link to="/" className="cyber-brand">BLACKJACK</Link>
+          {/* Left section: Back button (if in game) + Brand Title + Subtitle */}
+          <div className="flex items-center gap-3">
+            {gameMode && (
+              <button
+                onClick={() => {
+                  changeGameMode(null);
+                  navigate('/');
+                }}
+                className="cyber-header-back-btn"
+                title="Back to Lobby"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              </button>
+            )}
+            <div className="flex flex-col justify-center">
+              <Link to="/" className="cyber-brand !mb-0 !pb-0 leading-none">BLACKJACK</Link>
+              {gameMode && (
+                <span className={`text-[9px] font-black tracking-widest uppercase mt-1 ${gameMode === 'multiplayer' ? 'text-purple-500 text-shadow-purple' : 'text-cyan-400 text-shadow-cyan'}`}>
+                  {gameMode === 'multiplayer' ? 'Multiplayer' : 'Single Player'}
+                </span>
+              )}
+            </div>
+          </div>
 
+          {/* Center section: Unified Segmented Stats Pill */}
           <div className="cyber-header-center">
             {address && (
-              <div className="cyber-balance-pill">
-                <span className="cyber-balance-label">BALANCE</span>
-                <span className="cyber-balance-val">{Number(balance).toLocaleString()} <span className="cyber-balance-unit">TKN</span></span>
+              <div className="cyber-header-stats-container">
+                {/* Balance Segment */}
+                <div className="cyber-header-stat-segment">
+                  <div className="flex flex-col items-start">
+                    <span className="cyber-stat-label">BALANCE</span>
+                    <span className="cyber-stat-value">
+                      {Number(balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <span className="cyber-stat-icon-coin ml-1.5"></span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Current Bet Segment (if in game) */}
+                {gameMode && (
+                  <div className="cyber-header-stat-segment border-l border-white/10 pl-4">
+                    <div className="flex flex-col items-start">
+                      <span className="cyber-stat-label">CURRENT BET</span>
+                      <span className="cyber-stat-value">
+                        {Number(currentBet).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className="cyber-stat-icon-chip ml-1.5"></span>
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Total Win Segment (if in game) */}
+                {gameMode && (
+                  <div className="cyber-header-stat-segment border-l border-white/10 pl-4">
+                    <div className="flex flex-col items-start">
+                      <span className="cyber-stat-label">TOTAL WIN</span>
+                      <span className="cyber-stat-value text-emerald-400">
+                        {Number(lastWin).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className="cyber-stat-icon-trophy ml-1.5"></span>
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-            {gameMode && (
-              <>
-                <div className="cyber-stat-pill">
-                  <span className="cyber-balance-label">BET</span>
-                  <span className="cyber-balance-val">{Number(currentBet).toLocaleString()}</span>
-                </div>
-                <div className="cyber-stat-pill">
-                  <span className="cyber-balance-label">WIN</span>
-                  <span className="cyber-balance-val" style={{ color: '#4ade80' }}>{Number(lastWin).toLocaleString()}</span>
-                </div>
-              </>
             )}
           </div>
 
+          {/* Right section: Buy Chips + Notification Bell + Profile + Hamburger menu */}
           <div className="cyber-header-right">
-            <button onClick={handleBuyChipsClick} className="cyber-buy-chips-btn">BUY CHIPS</button>
+            <button onClick={handleBuyChipsClick} className="cyber-buy-chips-btn flex items-center gap-2">
+              <span>BUY CHIPS</span>
+              <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center font-black text-xs pb-[1px]">+</div>
+            </button>
+
             {address ? (
-              <div style={{ position: 'relative' }}>
+              <div ref={profileMenuRef} style={{ position: 'relative' }} className="flex items-center gap-2">
+                {/* Profile Box */}
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="cyber-wallet-btn flex items-center gap-2"
+                  className="cyber-header-profile-btn flex items-center gap-3"
                 >
-                  <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full overflow-hidden border border-white/20 flex-shrink-0">
                     <img src={getAvatarAsset(customAvatar, address)} className="w-full h-full object-cover" alt="Avatar" />
                   </div>
-                  <span>{address.slice(0, 6)}...{address.slice(-4)}</span>
-                  {isAdmin && <span className="cyber-admin-badge">Admin</span>}
+                  <span className="text-xs font-bold text-white leading-none">{address.slice(0, 6)}...{address.slice(-4)}</span>
+                  {isAdmin && <span className="cyber-admin-badge scale-90 -mr-1">Admin</span>}
                 </button>
+
                 {showProfileMenu && (
                   <div className="cyber-dropdown">
                     <div className="px-4 py-2 border-b border-white/5 mb-1 text-xs text-slate-500 uppercase tracking-widest font-bold">
@@ -669,12 +730,6 @@ function AppContent() {
                 )
               ) : (
                 <div className="w-full relative">
-                  <button
-                    onClick={() => changeGameMode(null)}
-                    className="absolute top-[-40px] left-4 text-slate-400 hover:text-white flex items-center gap-2 text-base font-bold transition-all"
-                  >
-                    ← BACK TO LOBBY
-                  </button>
                   {gameMode === 'single' ? (
                     <BlackjackWeb2
                       authData={authData}

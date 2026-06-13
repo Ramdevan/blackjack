@@ -325,19 +325,61 @@ async function startBlockchainWatcher() {
   }, 15000); // 15 second interval is safe for public RPCs
 }
 
-let tableState = 'betting'; // betting, playing, dealer-turn, settled
-let tableDealerHand = [];
-let currentTurnIndex = 0;
-let activeTableId = 0; // Synchronized on-chain table ID
+// --- Multiple Table Storage ---
+const tables = new Map();
 
-const connectedPlayers = new Map(); // socketId -> playerDetails
+function getOrCreateTable(tableId) {
+  const tid = String(tableId);
+  if (!tables.has(tid)) {
+    tables.set(tid, {
+      id: tid,
+      tableState: 'betting', // betting, playing, dealer-turn, settled
+      tableDealerHand: [],
+      currentTurnIndex: 0,
+      activeTableId: 0, // contract table id
+      connectedPlayers: new Map() // socketId -> playerDetails
+    });
+  }
+  return tables.get(tid);
+}
 
 io.on('connection', (socket) => {
   console.log(`User connected to socket relay: ${socket.id}`);
 
-  socket.on('join-table', async ({ address, nickname, avatar }) => {
-    if (!address) return;
-    
+  // Fetch all lobby counts for table selector
+  socket.on('get-lobby-status', () => {
+    sendLobbyStatus(socket);
+  });
+
+  function sendLobbyStatus(targetSocket) {
+    const status = [];
+    for (let i = 1; i <= 5; i++) {
+      const table = getOrCreateTable(i);
+      status.push({
+        id: i,
+        playerCount: table.connectedPlayers.size
+      });
+    }
+    targetSocket.emit('lobby-status', status);
+  }
+
+  function broadcastLobbyStatus() {
+    const status = [];
+    for (let i = 1; i <= 5; i++) {
+      const table = getOrCreateTable(i);
+      status.push({
+        id: i,
+        playerCount: table.connectedPlayers.size
+      });
+    }
+    io.emit('lobby-status', status);
+  }
+
+  socket.on('join-table', async ({ tableId, address, nickname, avatar }) => {
+    if (!tableId || !address) return;
+    const tid = String(tableId);
+    const table = getOrCreateTable(tid);
+
     // Fetch or create user in DB, and use database values if already set
     let dbNickname = nickname;
     let dbAvatar = avatar;
@@ -370,25 +412,29 @@ io.on('connection', (socket) => {
     nickname = dbNickname || nickname;
     avatar = dbAvatar || avatar;
 
-    console.log(`Player ${address} joined table on socket ${socket.id} (Name: ${nickname}, Avatar: ${avatar})`);
+    console.log(`Player ${address} joined table #${tid} on socket ${socket.id} (Name: ${nickname}, Avatar: ${avatar})`);
     socket.emit('settings-synced', { nickname, avatar });
 
     // Check if this player already exists in our connected players list (by address)
     let existingPlayer = null;
-    for (const [sid, p] of connectedPlayers.entries()) {
+    for (const [sid, p] of table.connectedPlayers.entries()) {
       if (p.address.toLowerCase() === address.toLowerCase()) {
         existingPlayer = { ...p };
-        connectedPlayers.delete(sid);
+        table.connectedPlayers.delete(sid);
       }
     }
 
-    if (!existingPlayer && connectedPlayers.size >= 5) {
-      console.log(`Player ${address} rejected: table full`);
-      socket.emit('table-full', { message: 'Table is full! (Max 5 players)' });
+    if (!existingPlayer && table.connectedPlayers.size >= 5) {
+      console.log(`Player ${address} rejected: table #${tid} full`);
+      socket.emit('table-full', { message: `Table #${tid} is full! (Max 5 players)` });
       return;
     }
 
-    connectedPlayers.set(socket.id, {
+    // Join room & save state
+    socket.join(`table_${tid}`);
+    socket.tableId = tid;
+
+    table.connectedPlayers.set(socket.id, {
       socketId: socket.id,
       address: address,
       nickname: nickname || (existingPlayer ? existingPlayer.nickname : ''),
@@ -402,15 +448,48 @@ io.on('connection', (socket) => {
       scoreRight: existingPlayer ? (existingPlayer.scoreRight || 0) : 0
     });
 
-    broadcastTableState();
+    broadcastTableState(tid);
+    broadcastLobbyStatus();
+  });
+
+  socket.on('leave-table', async () => {
+    const tid = socket.tableId;
+    if (tid) {
+      const table = getOrCreateTable(tid);
+      if (table.connectedPlayers.has(socket.id)) {
+        const address = table.connectedPlayers.get(socket.id).address;
+        console.log(`Player ${address} left Table #${tid}`);
+        table.connectedPlayers.delete(socket.id);
+        socket.leave(`table_${tid}`);
+        socket.tableId = null;
+
+        // If table becomes empty, reset state
+        if (table.connectedPlayers.size === 0) {
+          table.tableState = 'betting';
+          table.tableDealerHand = [];
+          table.currentTurnIndex = 0;
+          table.activeTableId = 0;
+        } else {
+          const activePlayers = await getActivePlayersOrdered(table.activeTableId, tid);
+          if (table.currentTurnIndex >= activePlayers.length) {
+            table.tableState = 'dealer-turn';
+          }
+        }
+        broadcastTableState(tid);
+      }
+    }
+    broadcastLobbyStatus();
   });
 
   socket.on('update-settings', async ({ address, nickname, avatar }) => {
-    const player = connectedPlayers.get(socket.id);
+    const tid = socket.tableId;
+    if (!tid) return;
+    const table = getOrCreateTable(tid);
+    const player = table.connectedPlayers.get(socket.id);
     if (player && player.address.toLowerCase() === address.toLowerCase()) {
       player.nickname = nickname;
       player.avatar = avatar;
-      console.log(`Player ${address} updated settings: Name=${nickname}, Avatar=${avatar}`);
+      console.log(`Player ${address} updated settings on Table #${tid}: Name=${nickname}, Avatar=${avatar}`);
       
       try {
         const pool = getPool();
@@ -420,14 +499,17 @@ io.on('connection', (socket) => {
         console.error('Error updating player settings in database:', dbErr);
       }
       
-      broadcastTableState();
+      broadcastTableState(tid);
     }
   });
 
   socket.on('set-table-id', async ({ tableId }) => {
-    activeTableId = Number(tableId);
-    if (activeTableId > 0) {
-      multiplayerTableIds.add(activeTableId);
+    const tid = socket.tableId;
+    if (!tid) return;
+    const table = getOrCreateTable(tid);
+    table.activeTableId = Number(tableId);
+    if (table.activeTableId > 0) {
+      multiplayerTableIds.add(table.activeTableId);
       // Persist to DB asynchronously!
       try {
         const pool = getPool();
@@ -439,19 +521,21 @@ io.on('connection', (socket) => {
         console.error("Failed to persist multiplayer tables:", dbErr.message);
       }
     }
-    console.log(`[Socket] Active Table ID set to: ${activeTableId}`);
-    broadcastTableState();
+    console.log(`[Socket] Active Table ID for Table #${tid} set to: ${table.activeTableId}`);
+    broadcastTableState(tid);
   });
 
-  async function getActivePlayersOrdered(tableId) {
+  async function getActivePlayersOrdered(tableId, tid) {
+    if (!tid) return [];
+    const table = getOrCreateTable(tid);
     if (!tableId || Number(tableId) === 0) {
-      return Array.from(connectedPlayers.values());
+      return Array.from(table.connectedPlayers.values());
     }
     const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, fallbackProvider);
     try {
       const activePlayerAddresses = await contract.getActivePlayers(tableId);
       return activePlayerAddresses.map(addr => {
-        const found = Array.from(connectedPlayers.values()).find(p => p.address.toLowerCase() === addr.toLowerCase());
+        const found = Array.from(table.connectedPlayers.values()).find(p => p.address.toLowerCase() === addr.toLowerCase());
         if (found) return found;
         return {
           address: addr,
@@ -466,17 +550,19 @@ io.on('connection', (socket) => {
       });
     } catch (e) {
       console.error("Failed to query active players from contract:", e.message);
-      return Array.from(connectedPlayers.values());
+      return Array.from(table.connectedPlayers.values());
     }
   }
 
-  async function advanceTurn() {
-    const activePlayers = await getActivePlayersOrdered(activeTableId);
-    currentTurnIndex++;
+  async function advanceTurn(tid) {
+    if (!tid) return;
+    const table = getOrCreateTable(tid);
+    const activePlayers = await getActivePlayersOrdered(table.activeTableId, tid);
+    table.currentTurnIndex++;
 
     // Skip players who are already stood, busted, finished, or got natural Blackjack (21 on 2 cards)
-    while (currentTurnIndex < activePlayers.length) {
-      const p = activePlayers[currentTurnIndex];
+    while (table.currentTurnIndex < activePlayers.length) {
+      const p = activePlayers[table.currentTurnIndex];
       const hasNaturalBJ = p.score === 21 && p.cards.length === 2 && !p.isSplit;
       const primaryDone = p.status === 'Stood' || p.status === 'Bust!' || p.status === 'Finished' || p.status === 'Blackjack' || hasNaturalBJ;
       const splitDone = !p.isSplit || p.status === 'Finished' || p.status === 'Stood' || p.status === 'Blackjack';
@@ -485,25 +571,28 @@ io.on('connection', (socket) => {
         if (hasNaturalBJ && p.status !== 'Blackjack') {
           p.status = 'Blackjack';
         }
-        currentTurnIndex++;
+        table.currentTurnIndex++;
       } else {
         break;
       }
     }
 
-    if (currentTurnIndex < activePlayers.length) {
+    if (table.currentTurnIndex < activePlayers.length) {
       activePlayers.forEach((p, idx) => {
-        if (idx === currentTurnIndex) {
+        if (idx === table.currentTurnIndex) {
           p.status = 'Playing';
         }
       });
     } else {
-      tableState = 'dealer-turn';
+      table.tableState = 'dealer-turn';
     }
   }
 
   socket.on('player-action', async (data) => {
-    const player = connectedPlayers.get(socket.id);
+    const tid = socket.tableId;
+    if (!tid) return;
+    const table = getOrCreateTable(tid);
+    const player = table.connectedPlayers.get(socket.id);
     if (!player) return;
 
     if (data.action === 'bet') {
@@ -512,13 +601,13 @@ io.on('connection', (socket) => {
       player.score = data.score || 0;
       player.status = 'Ready';
     } else if (data.action === 'start-round') {
-      tableState = 'playing';
-      currentTurnIndex = 0;
-      const activePlayers = await getActivePlayersOrdered(activeTableId);
+      table.tableState = 'playing';
+      table.currentTurnIndex = 0;
+      const activePlayers = await getActivePlayersOrdered(table.activeTableId, tid);
       
       // Skip players who got natural Blackjack or are already stood/busted
-      while (currentTurnIndex < activePlayers.length) {
-        const p = activePlayers[currentTurnIndex];
+      while (table.currentTurnIndex < activePlayers.length) {
+        const p = activePlayers[table.currentTurnIndex];
         const hasNaturalBJ = p.score === 21 && p.cards.length === 2 && !p.isSplit;
         const primaryDone = p.status === 'Stood' || p.status === 'Bust!' || p.status === 'Finished' || p.status === 'Blackjack' || hasNaturalBJ;
         const splitDone = !p.isSplit || p.status === 'Finished' || p.status === 'Stood' || p.status === 'Blackjack';
@@ -527,22 +616,22 @@ io.on('connection', (socket) => {
           if (hasNaturalBJ && p.status !== 'Blackjack') {
             p.status = 'Blackjack';
           }
-          currentTurnIndex++;
+          table.currentTurnIndex++;
         } else {
           break;
         }
       }
 
       activePlayers.forEach((p, idx) => {
-        if (idx === currentTurnIndex) {
+        if (idx === table.currentTurnIndex) {
           p.status = 'Playing';
-        } else if (idx > currentTurnIndex) {
+        } else if (idx > table.currentTurnIndex) {
           p.status = 'Waiting Turn';
         }
       });
 
-      if (currentTurnIndex >= activePlayers.length) {
-        tableState = 'dealer-turn';
+      if (table.currentTurnIndex >= activePlayers.length) {
+        table.tableState = 'dealer-turn';
       }
     } else if (data.action === 'hit') {
       player.cards = data.cards || [];
@@ -561,7 +650,7 @@ io.on('connection', (socket) => {
       } else {
         if (data.score > 21) {
           player.status = 'Bust!';
-          await advanceTurn();
+          await advanceTurn(tid);
         } else {
           player.status = 'Playing';
         }
@@ -572,7 +661,7 @@ io.on('connection', (socket) => {
         player.status = 'Left Stood';
       } else {
         player.status = 'Stood';
-        await advanceTurn();
+        await advanceTurn(tid);
       }
     } else if (data.action === 'finished') {
       player.cards = data.cards || player.cards;
@@ -581,11 +670,11 @@ io.on('connection', (socket) => {
       player.cardsRight = data.cardsRight || [];
       player.scoreRight = data.scoreRight || 0;
       player.status = data.statusText || 'Finished';
-      await advanceTurn();
+      await advanceTurn(tid);
     } else if (data.action === 'dealer-sync') {
-      tableDealerHand = data.dealerCards || [];
+      table.tableDealerHand = data.dealerCards || [];
       if (data.status) {
-        tableState = data.status;
+        table.tableState = data.status;
       }
     } else if (data.action === 'sync-cards') {
       player.cards = data.cards || [];
@@ -600,10 +689,10 @@ io.on('connection', (socket) => {
         player.status = 'Blackjack';
         
         // Find if this player is the active player on the backend
-        const activePlayers = await getActivePlayersOrdered(activeTableId);
+        const activePlayers = await getActivePlayersOrdered(table.activeTableId, tid);
         const activeIdx = activePlayers.findIndex(p => p.address && p.address.toLowerCase() === player.address.toLowerCase());
-        if (activeIdx === currentTurnIndex && tableState === 'playing') {
-          await advanceTurn();
+        if (activeIdx === table.currentTurnIndex && table.tableState === 'playing') {
+          await advanceTurn(tid);
         }
       }
     } else if (data.action === 'settle') {
@@ -620,50 +709,57 @@ io.on('connection', (socket) => {
       player.status = 'Waiting';
 
       // Reset table parameters when all players reset
-      const activePlayers = Array.from(connectedPlayers.values());
+      const activePlayers = Array.from(table.connectedPlayers.values());
       const allReset = activePlayers.every(p => p.bet === 0);
       if (allReset) {
-        tableState = 'betting';
-        tableDealerHand = [];
-        currentTurnIndex = 0;
-        activeTableId = 0; // Reset active table ID
+        table.tableState = 'betting';
+        table.tableDealerHand = [];
+        table.currentTurnIndex = 0;
+        table.activeTableId = 0; // Reset active table ID
       }
     }
 
-    broadcastTableState();
+    broadcastTableState(tid);
   });
 
   socket.on('disconnect', async () => {
-    if (connectedPlayers.has(socket.id)) {
-      const address = connectedPlayers.get(socket.id).address;
-      console.log(`Player ${address} disconnected on socket ${socket.id}`);
-      connectedPlayers.delete(socket.id);
+    const tid = socket.tableId;
+    if (tid) {
+      const table = getOrCreateTable(tid);
+      if (table.connectedPlayers.has(socket.id)) {
+        const address = table.connectedPlayers.get(socket.id).address;
+        console.log(`Player ${address} disconnected from Table #${tid} on socket ${socket.id}`);
+        table.connectedPlayers.delete(socket.id);
 
-      // If table becomes empty, reset state
-      if (connectedPlayers.size === 0) {
-        tableState = 'betting';
-        tableDealerHand = [];
-        currentTurnIndex = 0;
-        activeTableId = 0; // Reset active table ID
-      } else {
-        // Recalculate turn if active player disconnected
-        const activePlayers = await getActivePlayersOrdered(activeTableId);
-        if (currentTurnIndex >= activePlayers.length) {
-          tableState = 'dealer-turn';
+        // If table becomes empty, reset state
+        if (table.connectedPlayers.size === 0) {
+          table.tableState = 'betting';
+          table.tableDealerHand = [];
+          table.currentTurnIndex = 0;
+          table.activeTableId = 0; // Reset active table ID
+        } else {
+          // Recalculate turn if active player disconnected
+          const activePlayers = await getActivePlayersOrdered(table.activeTableId, tid);
+          if (table.currentTurnIndex >= activePlayers.length) {
+            table.tableState = 'dealer-turn';
+          }
         }
+        broadcastTableState(tid);
       }
-      broadcastTableState();
     }
+    broadcastLobbyStatus();
   });
 
-  function broadcastTableState() {
-    const playersList = Array.from(connectedPlayers.values());
-    io.emit('table-sync', {
+  function broadcastTableState(tid) {
+    if (!tid) return;
+    const table = getOrCreateTable(tid);
+    const playersList = Array.from(table.connectedPlayers.values());
+    io.to(`table_${tid}`).emit('table-sync', {
       players: playersList,
-      tableState: tableState,
-      tableDealerHand: tableDealerHand,
-      currentTurnIndex: currentTurnIndex,
-      activeTableId: activeTableId
+      tableState: table.tableState,
+      tableDealerHand: table.tableDealerHand,
+      currentTurnIndex: table.currentTurnIndex,
+      activeTableId: table.activeTableId
     });
   }
 });

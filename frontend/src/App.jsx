@@ -168,7 +168,8 @@ function AppContent() {
         'bj_outcome',
         'bj_pending_outcome',
         'bj_pending_payout',
-        'bj_is_turn_finished'
+        'bj_is_turn_finished',
+        'bj_selected_table_id'
       ];
       keys.forEach(k => localStorage.removeItem(k));
     }
@@ -456,7 +457,7 @@ function AppContent() {
   const isAdmin = address?.toLowerCase() === ADMIN_ADDRESS;
 
   return (
-    <div className="min-h-screen relative flex flex-col items-center overflow-x-hidden w-full">
+    <div className={`relative flex flex-col items-center w-full ${gameMode ? 'h-screen overflow-hidden' : 'min-h-screen overflow-x-hidden'}`}>
       {/* Dynamic Backgrounds based on Game State */}
       <>
         <div className="cyber-bg-cards"></div>
@@ -603,10 +604,10 @@ function AppContent() {
       )}
 
       {/* Main Content */}
-      <main className={`${location.pathname === '/admin' ? 'w-full px-8' : 'w-full max-w-7xl mx-auto items-center justify-center'} flex-1 z-10 flex flex-col pb-20 pt-12`}>
+      <main className={`${location.pathname === '/admin' ? 'w-full px-8' : 'w-full max-w-7xl mx-auto items-center justify-center'} flex-1 z-10 flex flex-col ${gameMode ? 'pb-2 pt-2 overflow-hidden justify-center' : 'pb-20 pt-12'}`}>
         <Routes>
           <Route path="/" element={
-            <div className="w-full flex flex-col items-center">
+            <div className={`w-full flex flex-col items-center ${gameMode ? 'h-full justify-center overflow-hidden' : ''}`}>
               {!address ? (
                 <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500 max-w-md bg-black/60 backdrop-blur-xl p-12 rounded-[40px] border border-white/10 shadow-2xl">
                   <div className="w-24 h-24 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-3xl flex items-center justify-center text-5xl mb-8 shadow-xl shadow-purple-500/20">💎</div>
@@ -729,7 +730,7 @@ function AppContent() {
                   </div>
                 )
               ) : (
-                <div className="w-full relative">
+                <div className={`w-full relative ${gameMode ? 'h-full flex flex-col justify-center items-center overflow-hidden' : ''}`}>
                   {gameMode === 'single' ? (
                     <BlackjackWeb2
                       authData={authData}

@@ -333,6 +333,15 @@ export const BlackjackWeb2 = ({ balance, setBalance, setCurrentBet, setLastWin, 
     if (!tokenContract) return;
     setLoading(true);
     try {
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const nativeBalance = await provider.getBalance(authData.address);
+        if (nativeBalance < ethers.parseEther("0.001")) {
+          toast.error("Insufficient tBNB balance!", { id: 'gas-balance-err' });
+          setLoading(false);
+          return;
+        }
+      }
       const tx = await tokenContract.approve(CONTRACT_ADDRESS, ethers.MaxUint256);
       await tx.wait();
       await checkAllowance(tokenContract, authData.address);
@@ -363,6 +372,28 @@ export const BlackjackWeb2 = ({ balance, setBalance, setCurrentBet, setLastWin, 
       setPlayerHandRight([]);
 
       const amount = ethers.parseUnits(betAmount.toString(), tokenDecimals);
+
+      // Check native tBNB balance for gas fee
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const nativeBalance = await provider.getBalance(authData.address);
+        if (nativeBalance < ethers.parseEther("0.002")) {
+          toast.error("Insufficient tBNB balance!", { id: 'gas-balance-err' });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Check token/chips balance
+      if (tokenContract) {
+        const tokenBal = await tokenContract.balanceOf(authData.address);
+        if (tokenBal < amount) {
+          toast.error("Insufficient balance!", { id: 'token-balance-err' });
+          setLoading(false);
+          return;
+        }
+      }
+
       if (allowance < amount) {
         setLoading(false);
         return toast.error('Insufficient allowance. Please approve tokens.');
@@ -1106,13 +1137,13 @@ export const BlackjackWeb2 = ({ balance, setBalance, setCurrentBet, setLastWin, 
             )}
 
             {isSplit ? (
-              <div className="flex flex-row justify-center gap-4 scale-95 origin-center mb-2">
+              <div className="flex flex-row justify-center gap-4 scale-100 origin-center mb-2">
                 {/* Left Hand */}
-                <div className={`flex flex-col items-center p-4 rounded-xl border transition-all duration-300 w-[180px] bg-slate-900/60 ${activeHandIndex === 0 && status === 'playing' ? 'border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)] bg-slate-900/90 scale-105' : 'border-slate-800 opacity-60'}`}>
+                <div className={`flex flex-col items-center p-4 rounded-xl border transition-all duration-300 w-[210px] bg-slate-900/60 ${activeHandIndex === 0 && status === 'playing' ? 'border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)] bg-slate-900/90 scale-105' : 'border-slate-800 opacity-60'}`}>
                   <div className="bg-black/40 px-2.5 py-0.5 text-white text-[9px] uppercase font-bold rounded tracking-wider mb-2 border border-slate-700">
                     Left Hand {activeHandIndex === 0 && status === 'playing' && "✏️ Active"}
                   </div>
-                  <div className="flex min-h-[90px] mb-2 relative justify-center scale-90 origin-top">
+                  <div className="flex min-h-[112px] mb-2 relative justify-center scale-[1.0] origin-top">
                     <div className="flex">
                       {playerHandLeft.map((c, i) => (
                         <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
@@ -1140,11 +1171,11 @@ export const BlackjackWeb2 = ({ balance, setBalance, setCurrentBet, setLastWin, 
                 </div>
 
                 {/* Right Hand */}
-                <div className={`flex flex-col items-center p-4 rounded-xl border transition-all duration-300 w-[180px] bg-slate-900/60 ${activeHandIndex === 1 && status === 'playing' ? 'border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)] bg-slate-900/90 scale-105' : 'border-slate-800 opacity-60'}`}>
+                <div className={`flex flex-col items-center p-4 rounded-xl border transition-all duration-300 w-[210px] bg-slate-900/60 ${activeHandIndex === 1 && status === 'playing' ? 'border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)] bg-slate-900/90 scale-105' : 'border-slate-800 opacity-60'}`}>
                   <div className="bg-black/40 px-2.5 py-0.5 text-white text-[9px] uppercase font-bold rounded tracking-wider mb-2 border border-slate-700">
                     Right Hand {activeHandIndex === 1 && status === 'playing' && "✏️ Active"}
                   </div>
-                  <div className="flex min-h-[90px] mb-2 relative justify-center scale-90 origin-top">
+                  <div className="flex min-h-[112px] mb-2 relative justify-center scale-[1.0] origin-top">
                     <div className="flex">
                       {playerHandRight.map((c, i) => (
                         <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
@@ -1293,7 +1324,7 @@ export const BlackjackWeb2 = ({ balance, setBalance, setCurrentBet, setLastWin, 
   };
 
   return (
-    <div className="w-full relative flex flex-col justify-between items-center select-none pt-4 pb-32 overflow-hidden">
+    <div className="w-full h-full relative flex flex-col justify-between items-center select-none pt-2 pb-28 overflow-hidden">
       
       {/* Curved Table felt container */}
       <TableBackground>
@@ -1349,7 +1380,7 @@ export const BlackjackWeb2 = ({ balance, setBalance, setCurrentBet, setLastWin, 
         {/* Center Seat (Single player sits at center Seat 3) */}
         <div className="absolute inset-0 z-10 pointer-events-none">
           {/* Seat 3 (Center): YOU */}
-          <div className="absolute bottom-[2%] left-[50%] transform -translate-x-1/2 pointer-events-auto">
+          <div className="absolute bottom-[7.5%] left-[50%] transform -translate-x-1/2 pointer-events-auto">
             <PlayerSeat />
           </div>
         </div>

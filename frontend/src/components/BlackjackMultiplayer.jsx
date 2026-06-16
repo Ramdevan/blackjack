@@ -85,7 +85,10 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
   const [betPlaced, setBetPlaced] = useState(false);
 
   // Dynamic Room Table Selection
-  const [selectedTableId, setSelectedTableId] = useState(null);
+  const [selectedTableId, setSelectedTableId] = useState(() => {
+    const saved = localStorage.getItem('bj_selected_table_id');
+    return saved ? parseInt(saved, 10) : null;
+  });
   const [lobbyStatus, setLobbyStatus] = useState([
     { id: 1, playerCount: 0 },
     { id: 2, playerCount: 0 },
@@ -145,6 +148,15 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
       if (timer) clearInterval(timer);
     };
   }, [isMyTurn, status, playerHand.length, playerHandRight.length, activeHandIndex]);
+
+  // Persistence: Save selected table ID to localStorage
+  useEffect(() => {
+    if (selectedTableId !== null) {
+      localStorage.setItem('bj_selected_table_id', selectedTableId.toString());
+    } else {
+      localStorage.removeItem('bj_selected_table_id');
+    }
+  }, [selectedTableId]);
 
   // Persistence: Restore game on load
   useEffect(() => {
@@ -332,7 +344,8 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
             }
             setIsSplit(myPlayer.isSplit || false);
 
-            const myTurn = myPlayer.status === 'Playing';
+            const activePlayingStatuses = ['playing', 'playing left', 'playing right', 'left stood', 'left busted'];
+            const myTurn = myPlayer.status && activePlayingStatuses.includes(myPlayer.status.toLowerCase());
             const savedIsTurnFinished = localStorage.getItem('bj_is_turn_finished') === 'true';
             setIsMyTurn((myTurn && !savedIsTurnFinished) || data.tableState === 'betting');
           }
@@ -704,6 +717,15 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
     if (!tokenContract) return;
     setLoading(true);
     try {
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const nativeBalance = await provider.getBalance(authData.address);
+        if (nativeBalance < ethers.parseEther("0.001")) {
+          toast.error("Insufficient tBNB balance!", { id: 'gas-balance-err' });
+          setLoading(false);
+          return;
+        }
+      }
       const tx = await tokenContract.approve(CONTRACT_ADDRESS, ethers.MaxUint256);
       await tx.wait();
       await fetchAllowanceAndBalance(tokenContract, authData.address);
@@ -1001,7 +1023,8 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
         isSettled: isSettled,
         isSplit: onChainIsSplit,
         playerHandLeft: formattedLeft,
-        playerHandRight: formattedRight
+        playerHandRight: formattedRight,
+        activeHandIndex: activeHandIndex
       };
     } catch (err) {
       console.error("Failed to sync on-chain cards:", err);
@@ -1028,6 +1051,25 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
     setOutcome(null);
     try {
       const betWei = ethers.parseUnits(betAmount.toString(), tokenDecimals);
+
+      // Check native tBNB balance for gas fee
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const nativeBalance = await provider.getBalance(authData.address);
+        if (nativeBalance < ethers.parseEther("0.002")) {
+          toast.error("Insufficient tBNB balance!", { id: 'gas-balance-err' });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Check token/chips balance
+      const tokenBal = await tokenContract.balanceOf(authData.address);
+      if (tokenBal < betWei) {
+        toast.error("Insufficient balance!", { id: 'token-balance-err' });
+        setLoading(false);
+        return;
+      }
 
       // Double-check active signer address in MetaMask to prevent wallet desync reverts
       if (window.ethereum) {
@@ -1251,15 +1293,15 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
         }, 1000);
       }
 
-      if (socket) {
+      if (socket && synced) {
         socket.emit('player-action', {
           action: 'hit',
-          cards: synced.playerHand,
-          score: score,
-          isSplit: splitInfo.isSplit,
-          cardsRight: playerHandRight,
-          scoreRight: calculateScore(playerHandRight),
-          activeHandIndex: Number(splitInfo.activeHandIndex)
+          cards: synced.isSplit ? synced.playerHandLeft : synced.playerHand,
+          score: calculateScore(synced.isSplit ? synced.playerHandLeft : synced.playerHand),
+          isSplit: synced.isSplit,
+          cardsRight: synced.isSplit ? synced.playerHandRight : [],
+          scoreRight: calculateScore(synced.isSplit ? synced.playerHandRight : []),
+          activeHandIndex: Number(synced.activeHandIndex)
         });
       }
     } catch (err) {
@@ -1321,23 +1363,22 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
 
       const synced = await syncCardsFromChain(activeId);
 
-      if (socket) {
-        const splitInfo = await contract.getPlayerSplitDetails(activeId, authData.address).catch(() => ({ isSplit: false, activeHandIndex: 0 }));
-        if (splitInfo.isSplit && Number(splitInfo.activeHandIndex) === 1) {
+      if (socket && synced) {
+        if (synced.isSplit && Number(synced.activeHandIndex) === 1) {
           // Transitioned from left hand to right hand turn
           socket.emit('player-action', {
             action: 'hit',
-            cards: synced ? synced.playerHand : [],
-            score: synced ? calculateScore(synced.playerHand) : 0,
+            cards: synced.playerHandLeft,
+            score: calculateScore(synced.playerHandLeft),
             isSplit: true,
-            cardsRight: playerHandRight,
-            scoreRight: calculateScore(playerHandRight),
+            cardsRight: synced.playerHandRight,
+            scoreRight: calculateScore(synced.playerHandRight),
             activeHandIndex: 1
           });
         } else {
           socket.emit('player-action', {
             action: 'stand',
-            activeHandIndex: Number(splitInfo.activeHandIndex)
+            activeHandIndex: Number(synced.activeHandIndex)
           });
         }
       }
@@ -1417,27 +1458,29 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
       setCurrentBet(prev => Number(prev) + Number(betAmount));
       setActivePlayerBet(prev => prev * 2);
 
-      if (socket) {
-        const splitInfo = await contract.getPlayerSplitDetails(activeId, authData.address).catch(() => ({ isSplit: false, activeHandIndex: 0 }));
-        const finalScore = synced ? calculateScore(synced.playerHand) : 0;
+      if (socket && synced) {
+        const finalScore = calculateScore(synced.playerHand);
         const isBust = finalScore > 21;
 
-        if (splitInfo.isSplit && Number(splitInfo.activeHandIndex) === 1) {
+        if (synced.isSplit && Number(synced.activeHandIndex) === 1) {
           // Transitioned to right hand
           socket.emit('player-action', {
             action: 'hit',
-            cards: synced ? synced.playerHand : [],
-            score: finalScore,
+            cards: synced.playerHandLeft,
+            score: calculateScore(synced.playerHandLeft),
             isSplit: true,
-            cardsRight: playerHandRight,
-            scoreRight: calculateScore(playerHandRight),
+            cardsRight: synced.playerHandRight,
+            scoreRight: calculateScore(synced.playerHandRight),
             activeHandIndex: 1
           });
         } else {
           socket.emit('player-action', {
             action: 'finished',
-            cards: synced ? synced.playerHand : [],
-            score: finalScore,
+            cards: synced.isSplit ? synced.playerHandLeft : synced.playerHand,
+            score: synced.isSplit ? calculateScore(synced.playerHandLeft) : finalScore,
+            isSplit: synced.isSplit,
+            cardsRight: synced.isSplit ? synced.playerHandRight : [],
+            scoreRight: synced.isSplit ? calculateScore(synced.playerHandRight) : 0,
             statusText: isBust ? 'Bust!' : 'Stood'
           });
         }
@@ -1549,11 +1592,11 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
       if (socket && synced) {
         socket.emit('player-action', {
           action: 'hit',
-          cards: synced.playerHand,
-          score: calculateScore(synced.playerHand),
+          cards: synced.isSplit ? synced.playerHandLeft : synced.playerHand,
+          score: calculateScore(synced.isSplit ? synced.playerHandLeft : synced.playerHand),
           isSplit: true,
-          cardsRight: playerHandRight,
-          scoreRight: calculateScore(playerHandRight),
+          cardsRight: synced.isSplit ? synced.playerHandRight : [],
+          scoreRight: calculateScore(synced.isSplit ? synced.playerHandRight : []),
           activeHandIndex: 0
         });
       }
@@ -1563,6 +1606,58 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetGameState = (isLeaving = false) => {
+    setStatus('betting');
+    setPlayerHand([]);
+    setDealerHand([]);
+    setOutcome(null);
+    setPendingOutcome(null);
+    setPendingPayout(null);
+    setIsTurnFinished(false);
+    setIsSplit(false);
+    setActiveHandIndex(0);
+    setPlayerHandLeft([]);
+    setPlayerHandRight([]);
+    setBetAmount(0);
+    setSelectedChip(null);
+    setBetPlaced(false);
+    setActivePlayerBet(0);
+    setGameId(null);
+    setTableState('betting');
+    setIsMyTurn(false);
+    setSharedDealerCards([]);
+    setTimeLeft(60);
+    setShowTimeoutPopup(false);
+
+    if (isLeaving) {
+      setIsTableLeader(false);
+      setOtherPlayers([]);
+      setSelectedTableId(null);
+      if (socket) {
+        socket.emit('leave-table');
+      }
+    } else {
+      if (socket) {
+        socket.emit('player-action', { action: 'reset' });
+      }
+    }
+
+    // Clean up all local storage items
+    localStorage.removeItem('bj_active_game_id');
+    localStorage.removeItem('bj_status');
+    localStorage.removeItem('bj_player_hand');
+    localStorage.removeItem('bj_dealer_hand');
+    localStorage.removeItem('bj_is_split');
+    localStorage.removeItem('bj_active_hand_index');
+    localStorage.removeItem('bj_player_hand_left');
+    localStorage.removeItem('bj_player_hand_right');
+    localStorage.removeItem('bj_outcome');
+    localStorage.removeItem('bj_pending_outcome');
+    localStorage.removeItem('bj_pending_payout');
+    localStorage.removeItem('bj_is_turn_finished');
+    localStorage.removeItem('bj_selected_table_id');
   };
 
   // Auto-start round once all connected players have placed their bets on-chain
@@ -1708,7 +1803,11 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
   const PlayerSeat = ({ player, idx }) => {
     const isPlayerActive = player.isYou
       ? (isMyTurn && status === 'playing')
-      : (player.status && player.status.toLowerCase().includes('playing'));
+      : (player.status && (
+          player.status.toLowerCase().includes('playing') ||
+          player.status.toLowerCase() === 'left stood' ||
+          player.status.toLowerCase() === 'left busted'
+        ));
 
     const playerAvatar = getAvatarAsset(player.avatar, player.address);
     const playerNickname = getNicknameToShow(player.nickname, player.address);
@@ -1718,7 +1817,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
     if (player.isYou) {
       playerScore = isSplit ? 0 : calculateScore(player.cards);
     } else {
-      playerScore = player.cards ? calculateScore(player.cards) : 0;
+      playerScore = player.isSplit ? 0 : (player.cards ? calculateScore(player.cards) : 0);
     }
 
     let statusClass = "status-badge-waiting";
@@ -1772,10 +1871,10 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
             )}
 
             {player.isSplit ? (
-              <div className="flex flex-row justify-around w-full gap-4 scale-[0.82] origin-bottom">
+              <div className="flex flex-row justify-around w-full gap-4 scale-[0.96] origin-bottom">
                 <div className="flex flex-col items-center">
                   <span className="text-[8px] text-slate-400 font-bold mb-1">Left ({calculateScore(player.cardsLeft)})</span>
-                  <div className="flex justify-center min-h-[80px] relative">
+                  <div className="flex justify-center min-h-[100px] relative">
                     <div className="flex animate-in slide-in-from-left-2 duration-300">
                       {player.cardsLeft && player.cardsLeft.map((c, i) => (
                         <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
@@ -1792,7 +1891,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
                 </div>
                 <div className="flex flex-col items-center">
                   <span className="text-[8px] text-slate-400 font-bold mb-1">Right ({calculateScore(player.cardsRight)})</span>
-                  <div className="flex justify-center min-h-[80px] relative">
+                  <div className="flex justify-center min-h-[100px] relative">
                     <div className="flex animate-in slide-in-from-right-2 duration-300">
                       {player.cardsRight && player.cardsRight.map((c, i) => (
                         <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
@@ -1982,29 +2081,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
         ) : status === 'settled' ? (
           <div className="flex justify-center w-full">
             <button
-              onClick={() => {
-                setStatus('betting');
-                setPlayerHand([]);
-                setDealerHand([]);
-                setOutcome(null);
-                setPendingOutcome(null);
-                setPendingPayout(null);
-                setIsTurnFinished(false);
-                setIsSplit(false);
-                setActiveHandIndex(0);
-                setPlayerHandLeft([]);
-                setPlayerHandRight([]);
-                setBetAmount(0);
-                setSelectedChip(null);
-                setBetPlaced(false);
-                setActivePlayerBet(0);
-                setGameId(null);
-                localStorage.removeItem('bj_active_game_id');
-                localStorage.removeItem('bj_status');
-                if (socket) {
-                  socket.emit('player-action', { action: 'reset' });
-                }
-              }}
+              onClick={() => resetGameState(false)}
               className="px-12 py-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black text-sm rounded-xl shadow-[0_0_20px_rgba(234,179,8,0.4)] hover:scale-105 active:scale-95 transition-all uppercase tracking-wider"
             >
               Play Another Hand
@@ -2073,17 +2150,12 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
   }
 
   return (
-    <div className="w-full relative flex flex-col justify-between items-center select-none pt-4 pb-24 overflow-hidden">
+    <div className="w-full h-full relative flex flex-col justify-between items-center select-none pt-2 pb-28 overflow-hidden">
 
       {/* Top Header Bar */}
       <div className="w-full max-w-5xl px-6 py-2.5 flex justify-between items-center z-20 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-2xl mb-4">
         <button
-          onClick={() => {
-            if (socket) {
-              socket.emit('leave-table');
-            }
-            setSelectedTableId(null);
-          }}
+          onClick={() => resetGameState(true)}
           className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 hover:border-rose-500/65 text-rose-400 font-extrabold text-[11px] tracking-wider uppercase rounded-xl transition-all duration-200"
         >
           ← Leave Table
@@ -2173,7 +2245,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
           </div>
 
           {/* Seat 3 (Center): YOU */}
-          <div className="absolute bottom-[2%] left-[50%] transform -translate-x-1/2 pointer-events-auto">
+          <div className="absolute bottom-[7.5%] left-[50%] transform -translate-x-1/2 pointer-events-auto">
             <PlayerSeat player={{
               isYou: true,
               address: authData.address,

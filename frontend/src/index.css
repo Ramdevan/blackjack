@@ -1659,11 +1659,11 @@ body::before {
   margin-top: 4px;
 }
 
-.player-address-text {
+.player-name-text {
   font-size: 10px !important;
   font-weight: 700 !important;
   color: rgba(255, 255, 255, 0.9) !important;
-  font-family: monospace !important;
+  font-family: inherit !important;
   margin-bottom: 5px !important;
   letter-spacing: 0.5px;
 }

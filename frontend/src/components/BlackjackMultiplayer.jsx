@@ -56,6 +56,55 @@ const CHIPS = [
   { value: 250, label: '250', className: 'chip-250' },
 ];
 
+// ─── Pure helpers at module level (no remount on re-render) ─────────────────
+
+const formatCard = (val) => {
+  if (val === 0) return { hidden: true };
+  const suits = ['♠', '♥', '♣', '♦'];
+  const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  const valIdx = (val - 1) % 13;
+  const suitIdx = (val * 7) % 4;
+  return { suit: suits[suitIdx], value: values[valIdx] };
+};
+
+const calculateScore = (hand) => {
+  if (!hand || !Array.isArray(hand)) return 0;
+  let score = 0;
+  let aces = 0;
+  for (const card of hand) {
+    if (card.hidden) continue;
+    if (card.value === 'A') {
+      aces += 1;
+      score += 11;
+    } else if (['J', 'Q', 'K'].includes(card.value)) {
+      score += 10;
+    } else {
+      score += parseInt(card.value);
+    }
+  }
+  while (score > 21 && aces > 0) {
+    score -= 10;
+    aces -= 1;
+  }
+  return score;
+};
+
+const getHandOutcome = (handCards, dealerCards) => {
+  if (!handCards || handCards.length === 0) return 'loss';
+  const score = calculateScore(handCards);
+  const dScore = calculateScore(dealerCards);
+  if (score > 21) return 'loss';
+  if (dScore > 21) return 'win';
+  const isDealerBJ = dealerCards.length === 2 && dScore === 21;
+  const isPlayerBJ = handCards.length === 2 && score === 21;
+  if (isPlayerBJ && !isDealerBJ) return 'win';
+  if (!isPlayerBJ && isDealerBJ) return 'loss';
+  if (isPlayerBJ && isDealerBJ) return 'push';
+  if (score > dScore) return 'win';
+  if (score < dScore) return 'loss';
+  return 'push';
+};
+
 export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLastWin, authData, gameMode, customNickname, customAvatar, onOpenSettings, onSyncSettings }) => {
   const [betAmount, setBetAmount] = useState(0);
   const [activePlayerBet, setActivePlayerBet] = useState(0);
@@ -322,14 +371,23 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
               .filter(p => p.address.toLowerCase() !== authData.address.toLowerCase())
               .map(p => {
                 const existing = prevOthers.find(op => op.address.toLowerCase() === p.address.toLowerCase());
-                if (existing && (!p.cards || p.cards.length === 0) && existing.cards && existing.cards.length > 0) {
+                let mappedPlayer = { ...p };
+
+                // The server stores the left split hand inside `cards`.
+                // PlayerSeat expects `cardsLeft`, so we derive it here.
+                if (mappedPlayer.isSplit) {
+                  mappedPlayer.cardsLeft = mappedPlayer.cardsLeft || mappedPlayer.cards || [];
+                }
+
+                if (existing && (!mappedPlayer.cards || mappedPlayer.cards.length === 0) && existing.cards && existing.cards.length > 0) {
                   return {
-                    ...p,
+                    ...mappedPlayer,
                     cards: existing.cards,
+                    cardsLeft: existing.cardsLeft || existing.cards || [],
                     score: existing.score
                   };
                 }
-                return p;
+                return mappedPlayer;
               });
           });
 
@@ -1681,463 +1739,6 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
     triggerAutoStart();
   }, [status, isTableLeader, betPlaced, otherPlayers, loading, gameId]);
 
-  const formatCard = (val) => {
-    if (val === 0) return { hidden: true };
-    const suits = ['♠', '♥', '♣', '♦'];
-    const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-    // val is 1..13 from the smart contract. Map to 0-indexed values array
-    const valIdx = (val - 1) % 13;
-    // Map suits deterministically
-    const suitIdx = (val * 7) % 4;
-    return { suit: suits[suitIdx], value: values[valIdx] };
-  };
-
-  const calculateScore = (hand) => {
-    if (!hand || !Array.isArray(hand)) return 0;
-    let score = 0;
-    let aces = 0;
-    for (const card of hand) {
-      if (card.hidden) continue;
-      if (card.value === 'A') {
-        aces += 1;
-        score += 11;
-      } else if (['J', 'Q', 'K'].includes(card.value)) {
-        score += 10;
-      } else {
-        score += parseInt(card.value);
-      }
-    }
-    while (score > 21 && aces > 0) {
-      score -= 10;
-      aces -= 1;
-    }
-    return score;
-  };
-
-  const getHandOutcome = (handCards, dealerCards) => {
-    if (!handCards || handCards.length === 0) return 'loss';
-    const score = calculateScore(handCards);
-    const dScore = calculateScore(dealerCards);
-
-    if (score > 21) return 'loss'; // Busted
-    if (dScore > 21) return 'win'; // Dealer busted
-
-    // Check blackjack
-    const isDealerBJ = dealerCards.length === 2 && dScore === 21;
-    const isPlayerBJ = handCards.length === 2 && score === 21;
-
-    if (isPlayerBJ && !isDealerBJ) return 'win';
-    if (!isPlayerBJ && isDealerBJ) return 'loss';
-    if (isPlayerBJ && isDealerBJ) return 'push';
-
-    if (score > dScore) return 'win';
-    if (score < dScore) return 'loss';
-    return 'push';
-  };
-
-  // Visual sub-component: Curved Blackjack Table Felt & Glow
-  const TableBackground = ({ children }) => {
-    return (
-      <div className="w-full overflow-hidden py-4 px-2 select-none relative z-10 mt-2 flex justify-center items-center">
-        <div className="multiplayer-table-felt flex flex-col justify-between items-center py-8 px-6">
-          
-          {/* Rules printed graphics inside the felt */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-            <svg className="w-[85%] h-[85%]" viewBox="0 0 1000 600" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path id="bj-curve" d="M 150,220 A 400,250 0 0,0 850,220" fill="none" />
-              <text className="font-extrabold text-[24px]" letterSpacing="6" fill="#fff" textAnchor="middle">
-                <textPath href="#bj-curve" startOffset="50%">BLACKJACK PAYS 3 TO 2</textPath>
-              </text>
-              
-              <path id="dealer-curve" d="M 200,280 A 350,220 0 0,0 800,280" fill="none" />
-              <text className="font-bold text-[14px]" letterSpacing="4" fill="#fff" textAnchor="middle">
-                <textPath href="#dealer-curve" startOffset="50%">Dealer must hit soft 17</textPath>
-              </text>
-              
-              <path id="ins-curve" d="M 250,340 A 300,190 0 0,0 750,340" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeDasharray="10,6" />
-              <text className="font-extrabold text-[15px]" letterSpacing="5" fill="#fff" textAnchor="middle">
-                <textPath href="#ins-curve" startOffset="50%">INSURANCE PAYS 2 TO 1</textPath>
-              </text>
-            </svg>
-          </div>
-
-          {children}
-        </div>
-      </div>
-    );
-  };
-
-  // Visual sub-component: Dealer Section
-  const DealerSection = () => {
-    return (
-      <div className="flex justify-center items-center w-full relative z-20 mt-2">
-        {/* Dealer Hand */}
-        <div className="flex flex-col items-center relative">
-          <div className="bg-slate-950/95 px-5 py-1 text-white text-[10px] uppercase font-black rounded-full border border-white/12 tracking-widest mb-3 shadow-lg flex items-center gap-2">
-            <span>DEALER</span>
-            {status !== 'betting' && dealerHand.length > 0 && (
-              <span className="bg-red-500/80 px-2 py-0.5 rounded text-[10px] font-black text-white ml-1">
-                {calculateScore(dealerHand)}
-              </span>
-            )}
-          </div>
-          <div className="flex justify-center relative min-h-[100px]">
-            <div className="flex">
-              {status !== 'betting' && dealerHand.map((c, i) => (
-                <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-45px' : '0', zIndex: i }}>
-                  {c.hidden ? (
-                    <div className="classic-playing-card card-hidden classic-card-tilt-right"></div>
-                  ) : (
-                    <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Visual sub-component: Seated Active Player representation
-  const PlayerSeat = ({ player, idx }) => {
-    const isPlayerActive = player.isYou
-      ? (isMyTurn && status === 'playing')
-      : (player.status && (
-          player.status.toLowerCase().includes('playing') ||
-          player.status.toLowerCase() === 'left stood' ||
-          player.status.toLowerCase() === 'left busted'
-        ));
-
-    const playerAvatar = getAvatarAsset(player.avatar, player.address);
-    const playerNickname = getNicknameToShow(player.nickname, player.address);
-    const displayAddress = `${player.address.slice(0, 6)}...${player.address.slice(-4)}`;
-
-    let playerScore = 0;
-    if (player.isYou) {
-      playerScore = isSplit ? 0 : calculateScore(player.cards);
-    } else {
-      playerScore = player.isSplit ? 0 : (player.cards ? calculateScore(player.cards) : 0);
-    }
-
-    let statusClass = "status-badge-waiting";
-    let statusLabel = "WAITING";
-
-    if (player.isYou) {
-      if (isMyTurn && status === 'playing') {
-        statusClass = "status-badge-yourturn";
-        statusLabel = "YOUR TURN";
-      } else if (status === 'playing') {
-        statusClass = "status-badge-waiting";
-        statusLabel = "WAITING";
-      } else if (outcome === 'win') {
-        statusClass = "status-badge-blackjack";
-        statusLabel = "WINNER";
-      } else if (outcome === 'loss') {
-        statusClass = "bg-red-600/80 border-red-500/50 text-red-200";
-        statusLabel = "LOST";
-      } else if (outcome === 'push') {
-        statusClass = "status-badge-waiting border-amber-500/55 text-amber-400";
-        statusLabel = "PUSH";
-      }
-    } else {
-      const lowerStatus = player.status ? player.status.toLowerCase() : "";
-      if (isPlayerActive) {
-        statusClass = "status-badge-yourturn";
-        statusLabel = "PLAYING";
-      } else if (lowerStatus.includes('blackjack') || lowerStatus.includes('winner') || lowerStatus.includes('win')) {
-        statusClass = "status-badge-blackjack";
-        statusLabel = "WINNER";
-      } else if (lowerStatus.includes('lost') || lowerStatus.includes('bust') || lowerStatus.includes('loss')) {
-        statusClass = "bg-red-600/80 border-red-500/50 text-red-200";
-        statusLabel = "LOST";
-      } else {
-        statusClass = "status-badge-waiting";
-        statusLabel = player.status ? player.status.toUpperCase() : "WAITING";
-      }
-    }
-
-    return (
-      <div className="flex flex-col items-center justify-end min-h-[200px] relative">
-
-        {/* Card Stack - Displayed directly above the player avatar */}
-        {status !== 'betting' && (
-          <div className="relative flex flex-col items-center min-h-[90px] mb-2 z-20">
-            {/* Score Badge */}
-            {playerScore > 0 && (
-              <div className={`bj-score-badge ${player.isYou ? 'bj-score-badge-you' : ''} animate-in zoom-in duration-300`}>
-                {playerScore}
-              </div>
-            )}
-
-            {player.isSplit ? (
-              <div className="flex flex-row justify-around w-full gap-4 scale-[0.96] origin-bottom">
-                <div className="flex flex-col items-center">
-                  <span className="text-[8px] text-slate-400 font-bold mb-1">Left ({calculateScore(player.cardsLeft)})</span>
-                  <div className="flex justify-center min-h-[100px] relative">
-                    <div className="flex animate-in slide-in-from-left-2 duration-300">
-                      {player.cardsLeft && player.cardsLeft.map((c, i) => (
-                        <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
-                          <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {/* Left Hand Bet Badge */}
-                  <div className="mt-1 flex items-center gap-1 bg-black/75 px-2 py-0.5 rounded border border-white/20 text-[9px] font-black text-amber-400 shadow-md">
-                    <span className="w-1.5 h-1.5 rounded bg-red-500 border border-white/35"></span>
-                    <span>{player.bet || 0}</span>
-                  </div>
-                </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-[8px] text-slate-400 font-bold mb-1">Right ({calculateScore(player.cardsRight)})</span>
-                  <div className="flex justify-center min-h-[100px] relative">
-                    <div className="flex animate-in slide-in-from-right-2 duration-300">
-                      {player.cardsRight && player.cardsRight.map((c, i) => (
-                        <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
-                          <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {/* Right Hand Bet Badge */}
-                  <div className="mt-1 flex items-center gap-1 bg-black/75 px-2 py-0.5 rounded border border-white/20 text-[9px] font-black text-amber-400 shadow-md">
-                    <span className="w-1.5 h-1.5 rounded bg-red-500 border border-white/35"></span>
-                    <span>{player.bet || 0}</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex justify-center min-h-[80px] relative w-full scale-[0.8] origin-bottom">
-                <div className="flex">
-                  {player.cards && player.cards.map((c, i) => (
-                    <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-42px' : '0', zIndex: i }}>
-                      <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Player Info Card */}
-        <div className="flex flex-col items-center z-10 scale-[0.9] origin-bottom">
-          {/* Avatar with Ring */}
-          <div className={`${player.isYou ? 'avatar-ring-you' : 'avatar-ring-other'} ${isPlayerActive ? 'avatar-active-glow' : ''} mb-1.5 relative group shadow-2xl`}>
-            <img src={playerAvatar} className="w-full h-full object-cover rounded-full" alt="Avatar" />
-            {player.isYou && (
-              <button
-                onClick={onOpenSettings}
-                className="absolute -bottom-1 -right-1 bg-black/85 hover:bg-black border border-white/20 text-white rounded-full p-1 text-[9px] shadow-lg transition-transform hover:scale-110 active:scale-95"
-                title="Edit Profile"
-              >
-                ⚙️
-              </button>
-            )}
-          </div>
-
-          {/* Info Badge */}
-          <div className="player-info-card">
-            <span className="player-address-text">{displayAddress}</span>
-            <div className="player-bet-pill">
-              <span className="mini-casino-chip"></span>
-              <span className="player-bet-value">{player.isSplit ? (player.bet || 0) * 2 : (player.bet || 0)}</span>
-            </div>
-          </div>
-
-          {/* Status Badge */}
-          <span className={`text-[9.5px] font-black px-2.5 py-0.5 rounded uppercase tracking-wider border mt-1.5 shadow-md ${statusClass}`}>
-            {statusLabel}
-          </span>
-        </div>
-
-      </div>
-    );
-  };
-
-  // Visual sub-component: Empty placeholder seat
-  const EmptySeat = ({ seatLabel }) => {
-    return (
-      <div className="flex flex-col items-center justify-center p-3 min-h-[160px] transition-all duration-300 scale-[0.9] origin-bottom">
-        <div className="w-14 h-14 rounded-full border-2 border-dashed border-slate-700/40 flex items-center justify-center text-slate-600 mb-1.5 bg-black/25">
-          👤
-        </div>
-        <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">{seatLabel}</span>
-        <button
-          onClick={() => toast.success("You are already joined as the player at the center seat!")}
-          className="px-3 py-1 bg-slate-900/60 hover:bg-slate-900 border border-slate-800/40 hover:border-slate-600 rounded-lg text-[9px] text-slate-400 hover:text-white font-black uppercase tracking-wider transition-all duration-300 shadow-md"
-        >
-          Join Table
-        </button>
-      </div>
-    );
-  };
-
-  // Visual sub-component: Betting Actions & Chips Selector Bottom Panel
-  const BettingPanel = () => {
-    return (
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center justify-between gap-6 px-6 py-4 rounded-[24px] w-[95%] max-w-[960px] betting-glass-panel animate-in slide-in-from-bottom-12 duration-500">
-
-        {/* Left Section: Chip Selector, Status Info, or Bet Placed Confirmation */}
-        {status === 'betting' ? (
-          betPlaced ? (
-            <div className="flex items-center gap-3 animate-in fade-in duration-300">
-              <span className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs font-black uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
-                ✅ Bet of {betAmount} chips placed on-chain!
-              </span>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2">
-              <div className="flex items-center gap-3 bg-black/40 px-4 py-2 rounded-2xl border border-white/5">
-                <button className="text-slate-500 hover:text-white font-black text-lg">‹</button>
-                <div className="flex gap-2.5">
-                  {CHIPS.map(chip => (
-                    <div
-                      key={chip.value}
-                      onClick={() => { setSelectedChip(chip.value); setBetAmount(prev => prev + chip.value); }}
-                      className={`casino-chip ${chip.className} ${selectedChip === chip.value ? 'chip-selected ring-2 ring-white scale-110 shadow-lg' : ''}`}
-                    >
-                      {chip.label}
-                    </div>
-                  ))}
-                </div>
-                <button className="text-slate-500 hover:text-white font-black text-lg">›</button>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold uppercase tracking-wider">
-                <span>Total Bet: {betAmount}</span>
-                <span className="mini-casino-chip"></span>
-              </div>
-            </div>
-          )
-        ) : (
-          <div className="flex items-center gap-2">
-            {status === 'playing' && !isMyTurn && (
-              <div className="flex items-center gap-3 animate-in fade-in duration-300">
-                <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-[10px] font-bold animate-pulse">
-                  ⏳ Waiting for player action...
-                </span>
-                <button
-                  onClick={forceTimeout}
-                  disabled={loading}
-                  className="px-3 py-1 bg-red-500/15 border border-red-500/20 hover:bg-red-500/25 rounded-lg text-red-400 text-[9px] font-bold transition-all uppercase"
-                >
-                  ⚠️ Force Timeout
-                </button>
-              </div>
-            )}
-            {loading && (
-              <span className="text-white text-xs font-bold animate-pulse">Waiting for network transaction...</span>
-            )}
-          </div>
-        )}
-
-        {/* Right Section: Actions or Place Bet or Start Game */}
-        {status === 'betting' ? (
-          betPlaced ? (
-            <div className="flex items-center gap-4">
-              {isTableLeader ? (
-                <button
-                  onClick={startRound}
-                  disabled={loading}
-                  className="px-8 py-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black rounded-xl shadow-[0_0_20px_rgba(234,179,8,0.3)] hover:scale-105 active:scale-95 transition-all text-xs uppercase tracking-wider"
-                >
-                  {loading ? "STARTING ROUND..." : "START GAME"}
-                </button>
-              ) : (
-                <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest animate-pulse">
-                  Waiting for leader to start game...
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => { setBetAmount(0); setSelectedChip(null); }}
-                className="px-6 py-3 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 rounded-xl font-black text-xs uppercase tracking-wider transition-all"
-              >
-                Clear
-              </button>
-              {needsApproval ? (
-                <button
-                  onClick={approveTokens}
-                  disabled={loading}
-                  className="px-8 py-3 bg-orange-500 hover:bg-orange-600 text-black rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all text-xs uppercase tracking-wider"
-                >
-                  {loading ? "APPROVING..." : "APPROVE TOKENS"}
-                </button>
-              ) : (
-                <button
-                  onClick={placeBet}
-                  disabled={loading || betAmount <= 0}
-                  className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-black rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed text-xs uppercase tracking-wider"
-                >
-                  {loading ? "TRANSACTING..." : (betAmount > 0 ? `PLACE BET (${betAmount})` : "SELECT CHIPS TO BET")}
-                </button>
-              )}
-            </div>
-          )
-        ) : status === 'settled' ? (
-          <div className="flex justify-center w-full">
-            <button
-              onClick={() => resetGameState(false)}
-              className="px-12 py-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black text-sm rounded-xl shadow-[0_0_20px_rgba(234,179,8,0.4)] hover:scale-105 active:scale-95 transition-all uppercase tracking-wider"
-            >
-              Play Another Hand
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-6">
-            {/* Game Action Buttons */}
-            {isMyTurn && (
-              <div className="flex items-center gap-3 animate-in fade-in duration-300">
-                <button
-                  onClick={hit}
-                  disabled={loading || status !== 'playing'}
-                  className="btn-action btn-hit flex items-center justify-center gap-2"
-                >
-                  HIT
-                </button>
-                <button
-                  onClick={stand}
-                  disabled={loading || status !== 'playing'}
-                  className="btn-action btn-stand flex items-center justify-center gap-2"
-                >
-                  STAND
-                </button>
-                <button
-                  onClick={doubleDown}
-                  disabled={loading || status !== 'playing' || playerHand.length !== 2}
-                  className="btn-action btn-double flex items-center justify-center gap-2"
-                >
-                  DOUBLE
-                </button>
-                <button
-                  onClick={split}
-                  disabled={loading || status !== 'playing' || isSplit || playerHand.length !== 2 || (playerHand[0] && playerHand[1] && playerHand[0].value !== playerHand[1].value)}
-                  className="btn-action btn-split flex items-center justify-center gap-2"
-                >
-                  SPLIT
-                </button>
-              </div>
-            )}
-
-            {/* Turn Timer Dial */}
-            {isMyTurn && (
-              <div className="circular-timer-box animate-in zoom-in duration-300">
-                <span className="text-[7.5px] font-black text-emerald-400 uppercase tracking-widest leading-none mb-1">YOUR TURN</span>
-                <span className="text-xl font-black text-white leading-none">{timeLeft}</span>
-                <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">SEC</span>
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-    );
-  };
-
   const needsApproval = allowance < ethers.parseUnits(betAmount.toString() || "0", tokenDecimals);
 
   if (selectedTableId === null) {
@@ -2177,7 +1778,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
       <TableBackground>
 
         {/* Dealer area at top-center */}
-        <DealerSection />
+        <DealerSection status={status} dealerHand={dealerHand} />
 
         {/* Outcome Banner */}
         {status === 'settled' && outcome && (
@@ -2229,7 +1830,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
           {/* Seat 1 (Far Left): otherPlayers[0] */}
           <div className="absolute top-[22%] left-[8%] transform -translate-y-1/2 pointer-events-auto">
             {otherPlayers[0] ? (
-              <PlayerSeat player={otherPlayers[0]} idx={0} />
+              <PlayerSeat player={otherPlayers[0]} idx={0} isMyTurn={isMyTurn} status={status} outcome={outcome} isSplit={isSplit} onOpenSettings={onOpenSettings} activeHandIndex={otherPlayers[0].activeHandIndex || 0} />
             ) : (
               <EmptySeat seatLabel="Seat 1" />
             )}
@@ -2238,7 +1839,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
           {/* Seat 2 (Mid Left): otherPlayers[1] */}
           <div className="absolute top-[55%] left-[18%] transform -translate-y-1/2 pointer-events-auto">
             {otherPlayers[1] ? (
-              <PlayerSeat player={otherPlayers[1]} idx={1} />
+              <PlayerSeat player={otherPlayers[1]} idx={1} isMyTurn={isMyTurn} status={status} outcome={outcome} isSplit={isSplit} onOpenSettings={onOpenSettings} activeHandIndex={otherPlayers[1].activeHandIndex || 0} />
             ) : (
               <EmptySeat seatLabel="Seat 2" />
             )}
@@ -2257,13 +1858,13 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
               cardsRight: playerHandRight,
               isSplit: isSplit,
               status: isMyTurn && status === 'playing' ? 'playing' : (status === 'playing' ? 'waiting' : outcome || 'waiting')
-            }} idx={2} />
+            }} idx={2} isMyTurn={isMyTurn} status={status} outcome={outcome} isSplit={isSplit} onOpenSettings={onOpenSettings} activeHandIndex={activeHandIndex} />
           </div>
 
           {/* Seat 4 (Mid Right): otherPlayers[2] */}
           <div className="absolute top-[55%] right-[18%] transform -translate-y-1/2 pointer-events-auto">
             {otherPlayers[2] ? (
-              <PlayerSeat player={otherPlayers[2]} idx={2} />
+              <PlayerSeat player={otherPlayers[2]} idx={2} isMyTurn={isMyTurn} status={status} outcome={outcome} isSplit={isSplit} onOpenSettings={onOpenSettings} activeHandIndex={otherPlayers[2].activeHandIndex || 0} />
             ) : (
               <EmptySeat seatLabel="Seat 4" />
             )}
@@ -2272,7 +1873,7 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
           {/* Seat 5 (Far Right): otherPlayers[3] */}
           <div className="absolute top-[22%] right-[8%] transform -translate-y-1/2 pointer-events-auto">
             {otherPlayers[3] ? (
-              <PlayerSeat player={otherPlayers[3]} idx={3} />
+              <PlayerSeat player={otherPlayers[3]} idx={3} isMyTurn={isMyTurn} status={status} outcome={outcome} isSplit={isSplit} onOpenSettings={onOpenSettings} activeHandIndex={otherPlayers[3].activeHandIndex || 0} />
             ) : (
               <EmptySeat seatLabel="Seat 5" />
             )}
@@ -2281,47 +1882,53 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
       </TableBackground>
 
       {/* Betting / Action bottom fixed panel */}
-      <BettingPanel />
+      <BettingPanel
+        status={status}
+        betPlaced={betPlaced}
+        betAmount={betAmount}
+        loading={loading}
+        isTableLeader={isTableLeader}
+        selectedChip={selectedChip}
+        isMyTurn={isMyTurn}
+        isSplit={isSplit}
+        playerHand={playerHand}
+        timeLeft={timeLeft}
+        needsApproval={needsApproval}
+        setSelectedChip={setSelectedChip}
+        setBetAmount={setBetAmount}
+        startRound={startRound}
+        approveTokens={approveTokens}
+        placeBet={placeBet}
+        resetGameState={resetGameState}
+        forceTimeout={forceTimeout}
+        hit={hit}
+        stand={stand}
+        doubleDown={doubleDown}
+        split={split}
+      />
 
       {/* Timeout Action Choice Popup Overlay */}
       {showTimeoutPopup && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center animate-in fade-in duration-300">
           <div className="bg-slate-950 border border-red-500/30 rounded-[30px] p-8 max-w-md w-full mx-4 shadow-[0_0_50px_rgba(239,68,68,0.25)] text-center animate-in zoom-in-95 duration-300">
-            {/* Warning Icon */}
             <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center text-3xl mx-auto mb-6 animate-pulse">
               ⚠️
             </div>
-            
-            {/* Title */}
-            <h3 className="text-2xl font-black text-white uppercase tracking-wider mb-2">
-              Time Expired!
-            </h3>
+            <h3 className="text-2xl font-black text-white uppercase tracking-wider mb-2">Time Expired!</h3>
             <p className="text-slate-400 text-sm mb-8 leading-relaxed">
               You did not make a choice in time. Please choose an action now to proceed with your hand.
             </p>
-            
-            {/* Action Buttons */}
             <div className="flex gap-4">
               <button
-                onClick={() => {
-                  setShowTimeoutPopup(false);
-                  hit();
-                }}
+                onClick={() => { setShowTimeoutPopup(false); hit(); }}
                 disabled={loading}
                 className="flex-1 py-4 bg-gradient-to-r from-cyan-400 to-blue-500 hover:scale-105 active:scale-95 transition-all text-black font-black uppercase tracking-wider rounded-2xl shadow-lg shadow-cyan-500/20 text-sm"
-              >
-                HIT
-              </button>
+              >HIT</button>
               <button
-                onClick={() => {
-                  setShowTimeoutPopup(false);
-                  stand();
-                }}
+                onClick={() => { setShowTimeoutPopup(false); stand(); }}
                 disabled={loading}
                 className="flex-1 py-4 bg-gradient-to-r from-red-500 to-pink-600 hover:scale-105 active:scale-95 transition-all text-white font-black uppercase tracking-wider rounded-2xl shadow-lg shadow-red-500/20 text-sm"
-              >
-                STAND
-              </button>
+              >STAND</button>
             </div>
           </div>
         </div>
@@ -2330,6 +1937,319 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
     </div>
   );
 };
+
+// ─── Top-level sub-components ─────────────────────────────────────────────────
+// Defined OUTSIDE BlackjackMultiplayer so React reuses their DOM nodes
+// on every re-render instead of unmounting+remounting them (eliminates the blink).
+
+const TableBackground = ({ children }) => (
+  <div className="w-full overflow-hidden py-4 px-2 select-none relative z-10 mt-2 flex justify-center items-center">
+    <div className="multiplayer-table-felt flex flex-col justify-between items-center py-8 px-6">
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+        <svg className="w-[85%] h-[85%]" viewBox="0 0 1000 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path id="bj-curve" d="M 150,220 A 400,250 0 0,0 850,220" fill="none" />
+          <text className="font-extrabold text-[24px]" letterSpacing="6" fill="#fff" textAnchor="middle">
+            <textPath href="#bj-curve" startOffset="50%">BLACKJACK PAYS 3 TO 2</textPath>
+          </text>
+          <path id="dealer-curve" d="M 200,280 A 350,220 0 0,0 800,280" fill="none" />
+          <text className="font-bold text-[14px]" letterSpacing="4" fill="#fff" textAnchor="middle">
+            <textPath href="#dealer-curve" startOffset="50%">Dealer must hit soft 17</textPath>
+          </text>
+          <path id="ins-curve" d="M 250,340 A 300,190 0 0,0 750,340" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeDasharray="10,6" />
+          <text className="font-extrabold text-[15px]" letterSpacing="5" fill="#fff" textAnchor="middle">
+            <textPath href="#ins-curve" startOffset="50%">INSURANCE PAYS 2 TO 1</textPath>
+          </text>
+        </svg>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const DealerSection = ({ status, dealerHand }) => (
+  <div className="flex justify-center items-center w-full relative z-20 mt-2">
+    <div className="flex flex-col items-center relative">
+      <div className="bg-slate-950/95 px-5 py-1 text-white text-[10px] uppercase font-black rounded-full border border-white/12 tracking-widest mb-3 shadow-lg flex items-center gap-2">
+        <span>DEALER</span>
+        {status !== 'betting' && dealerHand.length > 0 && (
+          <span className="bg-red-500/80 px-2 py-0.5 rounded text-[10px] font-black text-white ml-1">
+            {calculateScore(dealerHand)}
+          </span>
+        )}
+      </div>
+      <div className="flex justify-center relative min-h-[100px]">
+        <div className="flex">
+          {status !== 'betting' && dealerHand.map((c, i) => (
+            <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-45px' : '0', zIndex: i }}>
+              {c.hidden ? (
+                <div className="classic-playing-card card-hidden classic-card-tilt-right"></div>
+              ) : (
+                <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const EmptySeat = ({ seatLabel }) => (
+  <div className="flex flex-col items-center justify-center p-3 min-h-[160px] transition-all duration-300 scale-[0.9] origin-bottom">
+    <div className="w-14 h-14 rounded-full border-2 border-dashed border-slate-700/40 flex items-center justify-center text-slate-600 mb-1.5 bg-black/25">👤</div>
+    <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">{seatLabel}</span>
+    <button
+      onClick={() => toast.success("You are already joined as the player at the center seat!")}
+      className="px-3 py-1 bg-slate-900/60 hover:bg-slate-900 border border-slate-800/40 hover:border-slate-600 rounded-lg text-[9px] text-slate-400 hover:text-white font-black uppercase tracking-wider transition-all duration-300 shadow-md"
+    >Join Table</button>
+  </div>
+);
+
+const PlayerSeat = ({ player, idx, isMyTurn, status, outcome, isSplit, onOpenSettings, activeHandIndex = 0 }) => {
+  const isPlayerActive = player.isYou
+    ? (isMyTurn && status === 'playing')
+    : (player.status && (
+        player.status.toLowerCase().includes('playing') ||
+        player.status.toLowerCase() === 'left stood' ||
+        player.status.toLowerCase() === 'left busted'
+      ));
+
+  const playerAvatar = getAvatarAsset(player.avatar, player.address);
+  const playerNickname = getNicknameToShow(player.nickname, player.address);
+
+  // For other players, the server puts the left-hand split cards in `player.cards`.
+  // For the local user, syncCardsFromChain sets `cardsLeft` directly.
+  const effectiveCardsLeft = player.cardsLeft || player.cards || [];
+  const effectiveCardsRight = player.cardsRight || [];
+
+  let playerScore = 0;
+  if (player.isYou) {
+    playerScore = isSplit ? 0 : calculateScore(player.cards);
+  } else {
+    playerScore = player.isSplit ? 0 : (player.cards ? calculateScore(player.cards) : 0);
+  }
+
+  let statusClass = "status-badge-waiting";
+  let statusLabel = "WAITING";
+  if (player.isYou) {
+    if (isMyTurn && status === 'playing') { statusClass = "status-badge-yourturn"; statusLabel = "YOUR TURN"; }
+    else if (status === 'playing') { statusClass = "status-badge-waiting"; statusLabel = "WAITING"; }
+    else if (outcome === 'win') { statusClass = "status-badge-blackjack"; statusLabel = "WINNER"; }
+    else if (outcome === 'loss') { statusClass = "bg-red-600/80 border-red-500/50 text-red-200"; statusLabel = "LOST"; }
+    else if (outcome === 'push') { statusClass = "status-badge-waiting border-amber-500/55 text-amber-400"; statusLabel = "PUSH"; }
+  } else {
+    const lowerStatus = player.status ? player.status.toLowerCase() : "";
+    if (isPlayerActive) { statusClass = "status-badge-yourturn"; statusLabel = "PLAYING"; }
+    else if (lowerStatus.includes('blackjack') || lowerStatus.includes('winner') || lowerStatus.includes('win')) { statusClass = "status-badge-blackjack"; statusLabel = "WINNER"; }
+    else if (lowerStatus.includes('lost') || lowerStatus.includes('bust') || lowerStatus.includes('loss')) { statusClass = "bg-red-600/80 border-red-500/50 text-red-200"; statusLabel = "LOST"; }
+    else { statusClass = "status-badge-waiting"; statusLabel = player.status ? player.status.toUpperCase() : "WAITING"; }
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-end min-h-[200px] relative">
+      {status !== 'betting' && (
+        <div className="relative flex flex-col items-center min-h-[90px] mb-2 z-20">
+          {playerScore > 0 && (
+            <div className={`bj-score-badge ${player.isYou ? 'bj-score-badge-you' : ''} animate-in zoom-in duration-300`}>
+              {playerScore}
+            </div>
+          )}
+          {player.isSplit ? (
+            <div className="flex flex-row justify-around w-full gap-8 scale-[0.85] origin-bottom">
+              <div className={`flex flex-col items-center p-2 rounded-xl transition-all duration-300 ${activeHandIndex === 0 && isPlayerActive ? 'bg-white/10 ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)] scale-105' : 'opacity-80'}`}>
+                <span className={`text-[12px] font-bold mb-1 ${activeHandIndex === 0 && isPlayerActive ? 'text-emerald-300' : 'text-slate-400'}`}>Left ({calculateScore(effectiveCardsLeft)})</span>
+                <div className="flex justify-center min-h-[100px] relative">
+                  <div className="flex animate-in slide-in-from-left-2 duration-300">
+                    {effectiveCardsLeft && effectiveCardsLeft.map((c, i) => (
+                      <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
+                        <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-1 flex items-center gap-1 bg-black/75 px-2 py-0.5 rounded border border-white/20 text-[9px] font-black text-amber-400 shadow-md">
+                  <span className="w-1.5 h-1.5 rounded bg-red-500 border border-white/35"></span>
+                  <span>{player.bet || 0}</span>
+                </div>
+              </div>
+              <div className={`flex flex-col items-center p-2 rounded-xl transition-all duration-300 ${activeHandIndex === 1 && isPlayerActive ? 'bg-white/10 ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)] scale-105' : 'opacity-80'}`}>
+                <span className={`text-[12px] font-bold mb-1 ${activeHandIndex === 1 && isPlayerActive ? 'text-emerald-300' : 'text-slate-400'}`}>Right ({calculateScore(effectiveCardsRight)})</span>
+                <div className="flex justify-center min-h-[100px] relative">
+                  <div className="flex animate-in slide-in-from-right-2 duration-300">
+                    {effectiveCardsRight && effectiveCardsRight.map((c, i) => (
+                      <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-35px' : '0', zIndex: i }}>
+                        <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-1 flex items-center gap-1 bg-black/75 px-2 py-0.5 rounded border border-white/20 text-[9px] font-black text-amber-400 shadow-md">
+                  <span className="w-1.5 h-1.5 rounded bg-red-500 border border-white/35"></span>
+                  <span>{player.bet || 0}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center min-h-[80px] relative w-full scale-[0.8] origin-bottom">
+              <div className="flex">
+                {player.cards && player.cards.map((c, i) => (
+                  <div key={i} className="transform transition-transform" style={{ marginLeft: i > 0 ? '-42px' : '0', zIndex: i }}>
+                    <Web2Card suit={c.suit} value={c.value} tiltClass={i % 2 === 0 ? 'classic-card-tilt-left' : 'classic-card-tilt-right'} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="flex flex-col items-center z-10 scale-[0.9] origin-bottom">
+        <div className={`${player.isYou ? 'avatar-ring-you' : 'avatar-ring-other'} ${isPlayerActive ? 'avatar-active-glow' : ''} mb-1.5 relative group shadow-2xl`}>
+          <img src={playerAvatar} className="w-full h-full object-cover rounded-full" alt="Avatar" />
+          {player.isYou && (
+            <button
+              onClick={onOpenSettings}
+              className="absolute -bottom-1 -right-1 bg-black/85 hover:bg-black border border-white/20 text-white rounded-full p-1 text-[9px] shadow-lg transition-transform hover:scale-110 active:scale-95"
+              title="Edit Profile"
+            >⚙️</button>
+          )}
+        </div>
+        <div className="player-info-card">
+          <span className="player-name-text">{playerNickname}</span>
+          <div className="player-bet-pill">
+            <span className="mini-casino-chip"></span>
+            <span className="player-bet-value">{player.isSplit ? (player.bet || 0) * 2 : (player.bet || 0)}</span>
+          </div>
+        </div>
+        <span className={`text-[9.5px] font-black px-2.5 py-0.5 rounded uppercase tracking-wider border mt-1.5 shadow-md ${statusClass}`}>
+          {statusLabel}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+const BettingPanel = ({
+  status, betPlaced, betAmount, loading, isTableLeader, selectedChip, isMyTurn, isSplit,
+  playerHand, timeLeft, needsApproval,
+  setSelectedChip, setBetAmount, startRound, approveTokens, placeBet,
+  resetGameState, forceTimeout, hit, stand, doubleDown, split
+}) => (
+  <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center justify-between gap-6 px-6 py-4 rounded-[24px] w-[95%] max-w-[960px] betting-glass-panel animate-in slide-in-from-bottom-12 duration-500">
+
+    {/* Left Section */}
+    {status === 'betting' ? (
+      betPlaced ? (
+        <div className="flex items-center gap-3 animate-in fade-in duration-300">
+          <span className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs font-black uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
+            ✅ Bet of {betAmount} chips placed on-chain!
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center gap-3 bg-black/40 px-4 py-2 rounded-2xl border border-white/5">
+            <button className="text-slate-500 hover:text-white font-black text-lg">‹</button>
+            <div className="flex gap-2.5">
+              {CHIPS.map(chip => (
+                <div
+                  key={chip.value}
+                  onClick={() => { setSelectedChip(chip.value); setBetAmount(prev => prev + chip.value); }}
+                  className={`casino-chip ${chip.className} ${selectedChip === chip.value ? 'chip-selected ring-2 ring-white scale-110 shadow-lg' : ''}`}
+                >{chip.label}</div>
+              ))}
+            </div>
+            <button className="text-slate-500 hover:text-white font-black text-lg">›</button>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold uppercase tracking-wider">
+            <span>Total Bet: {betAmount}</span>
+            <span className="mini-casino-chip"></span>
+          </div>
+        </div>
+      )
+    ) : (
+      <div className="flex items-center gap-2">
+        {status === 'playing' && !isMyTurn && (
+          <div className="flex items-center gap-3 animate-in fade-in duration-300">
+            <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-[10px] font-bold animate-pulse">
+              ⏳ Waiting for player action...
+            </span>
+            <button
+              onClick={forceTimeout}
+              disabled={loading}
+              className="px-3 py-1 bg-red-500/15 border border-red-500/20 hover:bg-red-500/25 rounded-lg text-red-400 text-[9px] font-bold transition-all uppercase"
+            >⚠️ Force Timeout</button>
+          </div>
+        )}
+        {loading && <span className="text-white text-xs font-bold animate-pulse">Waiting for network transaction...</span>}
+      </div>
+    )}
+
+    {/* Right Section */}
+    {status === 'betting' ? (
+      betPlaced ? (
+        <div className="flex items-center gap-4">
+          {isTableLeader ? (
+            <button
+              onClick={startRound}
+              disabled={loading}
+              className="px-8 py-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black rounded-xl shadow-[0_0_20px_rgba(234,179,8,0.3)] hover:scale-105 active:scale-95 transition-all text-xs uppercase tracking-wider"
+            >{loading ? "STARTING ROUND..." : "START GAME"}</button>
+          ) : (
+            <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest animate-pulse">
+              Waiting for leader to start game...
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => { setBetAmount(0); setSelectedChip(null); }}
+            className="px-6 py-3 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 rounded-xl font-black text-xs uppercase tracking-wider transition-all"
+          >Clear</button>
+          {needsApproval ? (
+            <button
+              onClick={approveTokens}
+              disabled={loading}
+              className="px-8 py-3 bg-orange-500 hover:bg-orange-600 text-black rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all text-xs uppercase tracking-wider"
+            >{loading ? "APPROVING..." : "APPROVE TOKENS"}</button>
+          ) : (
+            <button
+              onClick={placeBet}
+              disabled={loading || betAmount <= 0}
+              className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-black rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed text-xs uppercase tracking-wider"
+            >{loading ? "TRANSACTING..." : (betAmount > 0 ? `PLACE BET (${betAmount})` : "SELECT CHIPS TO BET")}</button>
+          )}
+        </div>
+      )
+    ) : status === 'settled' ? (
+      <div className="flex justify-center w-full">
+        <button
+          onClick={() => resetGameState(false)}
+          className="px-12 py-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 text-black font-black text-sm rounded-xl shadow-[0_0_20px_rgba(234,179,8,0.4)] hover:scale-105 active:scale-95 transition-all uppercase tracking-wider"
+        >Play Another Hand</button>
+      </div>
+    ) : (
+      <div className="flex items-center gap-6">
+        {isMyTurn && (
+          <div className="flex items-center gap-3 animate-in fade-in duration-300">
+            <button onClick={hit} disabled={loading || status !== 'playing'} className="btn-action btn-hit flex items-center justify-center gap-2">HIT</button>
+            <button onClick={stand} disabled={loading || status !== 'playing'} className="btn-action btn-stand flex items-center justify-center gap-2">STAND</button>
+            <button onClick={doubleDown} disabled={loading || status !== 'playing' || playerHand.length !== 2} className="btn-action btn-double flex items-center justify-center gap-2">DOUBLE</button>
+            <button onClick={split} disabled={loading || status !== 'playing' || isSplit || playerHand.length !== 2 || (playerHand[0] && playerHand[1] && playerHand[0].value !== playerHand[1].value)} className="btn-action btn-split flex items-center justify-center gap-2">SPLIT</button>
+          </div>
+        )}
+        {isMyTurn && (
+          <div className="circular-timer-box animate-in zoom-in duration-300">
+            <span className="text-[7.5px] font-black text-emerald-400 uppercase tracking-widest leading-none mb-1">YOUR TURN</span>
+            <span className="text-xl font-black text-white leading-none">{timeLeft}</span>
+            <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">SEC</span>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+);
+
 
 const TableSelector = ({ lobbyStatus, onSelectTable }) => {
   const tablesInfo = [

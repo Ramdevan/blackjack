@@ -1137,7 +1137,7 @@ export const BlackjackWeb2 = ({ balance, setBalance, setCurrentBet, setLastWin, 
             )}
 
             {isSplit ? (
-              <div className="flex flex-row justify-center gap-4 scale-100 origin-center mb-2">
+              <div className="flex flex-row justify-center gap-35 scale-100 origin-center mb-2">
                 {/* Left Hand */}
                 <div className={`flex flex-col items-center p-4 rounded-xl border transition-all duration-300 w-[210px] bg-slate-900/60 ${activeHandIndex === 0 && status === 'playing' ? 'border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)] bg-slate-900/90 scale-105' : 'border-slate-800 opacity-60'}`}>
                   <div className="bg-black/40 px-2.5 py-0.5 text-white text-[9px] uppercase font-bold rounded tracking-wider mb-2 border border-slate-700">

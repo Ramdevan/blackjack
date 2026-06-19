@@ -1343,7 +1343,18 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
 
       const score = calculateScore(synced.playerHand);
       if (score > 21) {
-        toast.error("Bust!");
+        // When in split mode and the left hand (activeHandIndex === 0) busts,
+        // the smart contract still requires an explicit `stand()` call to
+        // finalise the left hand and move the active index to the right hand (1).
+        // Without this, the player would be stuck and unable to play the right hand.
+        if (synced.isSplit && Number(synced.activeHandIndex) === 0) {
+          toast.error("Left hand busted! Switching to right hand...", { duration: 2000 });
+          setTimeout(() => {
+            stand();
+          }, 1200);
+        } else {
+          toast.error("Bust!");
+        }
       } else if (score === 21) {
         toast.success("Exactly 21! Auto-standing...", { duration: 2000 });
         setTimeout(() => {
@@ -2055,7 +2066,7 @@ const PlayerSeat = ({ player, idx, isMyTurn, status, outcome, isSplit, onOpenSet
             </div>
           )}
           {player.isSplit ? (
-            <div className="flex flex-row justify-around w-full gap-8 scale-[0.85] origin-bottom">
+            <div className="flex flex-row justify-around w-full gap-30 scale-[0.85] origin-bottom">
               <div className={`flex flex-col items-center p-2 rounded-xl transition-all duration-300 ${activeHandIndex === 0 && isPlayerActive ? 'bg-white/10 ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)] scale-105' : 'opacity-80'}`}>
                 <span className={`text-[12px] font-bold mb-1 ${activeHandIndex === 0 && isPlayerActive ? 'text-emerald-300' : 'text-slate-400'}`}>Left ({calculateScore(effectiveCardsLeft)})</span>
                 <div className="flex justify-center min-h-[100px] relative">

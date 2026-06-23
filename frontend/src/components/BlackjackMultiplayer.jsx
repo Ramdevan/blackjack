@@ -1726,7 +1726,9 @@ export const BlackjackMultiplayer = ({ balance, setBalance, setCurrentBet, setLa
     localStorage.removeItem('bj_pending_outcome');
     localStorage.removeItem('bj_pending_payout');
     localStorage.removeItem('bj_is_turn_finished');
-    localStorage.removeItem('bj_selected_table_id');
+    if (isLeaving) {
+      localStorage.removeItem('bj_selected_table_id');
+    }
   };
 
   // Auto-start round once all connected players have placed their bets on-chain

@@ -522,7 +522,7 @@ function AppContent() {
                 </div>
 
                 {/* Current Bet Segment (if in game) */}
-                {gameMode && (
+                {/* {gameMode && (
                   <div className="cyber-header-stat-segment border-l border-white/10 pl-4">
                     <div className="flex flex-col items-start">
                       <span className="cyber-stat-label">CURRENT BET</span>
@@ -532,10 +532,10 @@ function AppContent() {
                       </span>
                     </div>
                   </div>
-                )}
+                )} */}
 
                 {/* Total Win Segment (if in game) */}
-                {gameMode && (
+                {/* {gameMode && (
                   <div className="cyber-header-stat-segment border-l border-white/10 pl-4">
                     <div className="flex flex-col items-start">
                       <span className="cyber-stat-label">TOTAL WIN</span>
@@ -545,7 +545,7 @@ function AppContent() {
                       </span>
                     </div>
                   </div>
-                )}
+                )} */}
               </div>
             )}
           </div>

@@ -5,11 +5,11 @@ dotenv.config();
 
 // Default BSC Testnet RPCs for fallback
 const DEFAULT_RPC_URLS = [
-  "https://bsc-testnet-rpc.publicnode.com",
+  "https://bnb-testnet.api.onfinality.io/public",
+  "https://bsc-testnet.drpc.org",
   "https://data-seed-prebsc-1-s1.binance.org:8545",
   "https://data-seed-prebsc-2-s1.binance.org:8545",
-  "https://data-seed-prebsc-1-s2.binance.org:8545",
-  "https://data-seed-prebsc-2-s2.binance.org:8545"
+  "https://bsc-testnet-rpc.publicnode.com"
 ];
 
 let rpcUrls = DEFAULT_RPC_URLS;
